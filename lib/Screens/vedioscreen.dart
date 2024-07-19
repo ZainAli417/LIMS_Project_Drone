@@ -14,6 +14,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:geocoding/geocoding.dart' as geocoding;
 import 'package:latlong2/latlong.dart' as latlong;
+
 enum PathDirection { horizontal, vertical }
 
 class VideoScreen extends StatefulWidget {
@@ -39,12 +40,14 @@ class _VideoScreenState extends State<VideoScreen> {
       print('Error updating value in database: $e');
     }
   }
+
   void _updateValueInDatabaseOnRelease() async {
     try {
       await _databaseReference.child('Direction').set(0);
     } catch (e) {
       print('Error updating value in database: $e');
-    }}
+    }
+  }
 
   @override
   void initState() {
@@ -117,9 +120,7 @@ class _VideoScreenState extends State<VideoScreen> {
   Set<Polyline> _polylines = {};
   Set<Polygon> _polygons = {};
   List<LatLng> _dronepath = [];
-  double _remainingDistanceKM_TotalPath= 0.0;
-
-
+  double _remainingDistanceKM_TotalPath = 0.0;
 
   double calculate_selcted_segemnt_distance(List<LatLng> path) {
     double totalDistance = 0.0;
@@ -129,12 +130,14 @@ class _VideoScreenState extends State<VideoScreen> {
     _storeTimeDurationInDatabase(totalDistance);
 
     return totalDistance;
-  }// Return distance in kilometers
+  } // Return distance in kilometers
+
   LatLng _lerpLatLng(LatLng a, LatLng b, double t) {
     double lat = a.latitude + (b.latitude - a.latitude) * t;
     double lng = a.longitude + (b.longitude - a.longitude) * t;
     return LatLng(lat, lng);
   }
+
   void _storeTimeDurationInDatabase(double totalDistanceInKM) {
     try {
       const double speed = 10; // Speed in meters per second
@@ -162,6 +165,7 @@ class _VideoScreenState extends State<VideoScreen> {
       print('Error storing time duration in database: $e');
     }
   }
+
   double calculateonelinedistance(LatLng start, LatLng end) {
     const R = 6371; // Radius of the Earth in kilometers
     double lat1 = start.latitude * pi / 180;
@@ -175,16 +179,14 @@ class _VideoScreenState extends State<VideoScreen> {
     double c = 2 * atan2(sqrt(a), sqrt(1 - a));
     return R * c; // Distance in kilometers
   }
+
   double _calculateTotalDistanceZIGAG(List<LatLng> path) {
     double totalzigzagdis = 0.0;
     for (int i = 0; i < path.length - 1; i++) {
       totalzigzagdis += calculateonelinedistance(path[i], path[i + 1]);
     }
     return totalzigzagdis;
-  }// Return distance in kilometers
-
-
-
+  } // Return distance in kilometers
 
   void _startMovement(List<LatLng> path) {
     if (path.isEmpty) {
@@ -204,58 +206,63 @@ class _VideoScreenState extends State<VideoScreen> {
     double distanceCoveredInWholeJourney = 0.0;
     double segmentDistanceCoveredKM = 0.0;
     _movementTimer = Timer.periodic(
-        Duration(milliseconds: (updateInterval * 1000).toInt()),
-            (timer) async {
-          if (_currentPointIndex < path.length - 1) {
-            LatLng start = path[_currentPointIndex];
-            LatLng end = path[_currentPointIndex + 1];
-            double segmentDistanceKM = calculateonelinedistance(start, end);
-            double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
-            segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-            double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
-            _carPosition = _lerpLatLng(start, end, segmentProgress);
-            bool isSelectedSegment = _isSegmentSelected(path, _currentPointIndex);
-            distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+        Duration(milliseconds: (updateInterval * 1000).toInt()), (timer) async {
+      if (_currentPointIndex < path.length - 1) {
+        LatLng start = path[_currentPointIndex];
+        LatLng end = path[_currentPointIndex + 1];
+        double segmentDistanceKM = calculateonelinedistance(start, end);
+        double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
+        segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+        double segmentProgress =
+            (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+        _carPosition = _lerpLatLng(start, end, segmentProgress);
+        bool isSelectedSegment = _isSegmentSelected(path, _currentPointIndex);
+        distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
 
-            if (isSelectedSegment) {
-              totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
-              double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
-              setState(() {
-                _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
-                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
-              });
-              // Only update database periodically
-              if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) { // Update every 500m
-                FirebaseDatabase.instance
-                    .ref()
-                    .child('remainingDistance')
-                    .set(_remainingDistanceKM_SelectedPath);
-              }
-            }
-            setState(() {
-              _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
-            });
-            setState(() {
-              _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
-              _addCarMarker(isSelectedSegment);
-              if (segmentProgress >= 1.0) {
-                _currentPointIndex++;
-                segmentDistanceCoveredKM = 0.0;
-              }
-            });
-            if (_currentPointIndex >= path.length - 1) {
-              _isMoving = false;
-              timer.cancel();
-              _onPathComplete();
-            }
-          } else {
-            _movementTimer?.cancel();
-            _isMoving = false;
-            timer.cancel();
-            _onPathComplete();
+        if (isSelectedSegment) {
+          totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
+          double remainingDistanceKM_SelectedPath =
+              _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+          setState(() {
+            _remainingDistanceKM_SelectedPath =
+                remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
+            _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+          });
+          // Only update database periodically
+          if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
+            // Update every 500m
+            FirebaseDatabase.instance
+                .ref()
+                .child('remainingDistance')
+                .set(_remainingDistanceKM_SelectedPath);
           }
         }
-    );
+        setState(() {
+          _remainingDistanceKM_TotalPath =
+              (totalZigzagPathKm - distanceCoveredInWholeJourney)
+                  .clamp(0.0, totalZigzagPathKm);
+        });
+        setState(() {
+          _markers.removeWhere(
+              (marker) => marker.markerId == const MarkerId('car'));
+          _addCarMarker(isSelectedSegment);
+          if (segmentProgress >= 1.0) {
+            _currentPointIndex++;
+            segmentDistanceCoveredKM = 0.0;
+          }
+        });
+        if (_currentPointIndex >= path.length - 1) {
+          _isMoving = false;
+          timer.cancel();
+          _onPathComplete();
+        }
+      } else {
+        _movementTimer?.cancel();
+        _isMoving = false;
+        timer.cancel();
+        _onPathComplete();
+      }
+    });
   }
 
   void _onPathComplete() {
@@ -263,7 +270,8 @@ class _VideoScreenState extends State<VideoScreen> {
     setState(() {
       _isMoving = false;
       _movementTimer?.cancel();
-      _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
+      _markers
+          .removeWhere((marker) => marker.markerId == const MarkerId('car'));
     });
   }
 
@@ -278,7 +286,6 @@ class _VideoScreenState extends State<VideoScreen> {
       ));
     });
   }
-
 
   void _showRoutesDialog() {
     List<int> selectedSegments = [];
@@ -324,7 +331,7 @@ class _VideoScreenState extends State<VideoScreen> {
                             setState(() {
                               selectedSegments = List.generate(
                                 (_dronepath.length - 1) ~/ 2,
-                                    (i) => i,
+                                (i) => i,
                               );
                             });
                           },
@@ -343,10 +350,12 @@ class _VideoScreenState extends State<VideoScreen> {
                                 startIndex + 2,
                               );
                               selectedPaths.add(segment);
-                              double segmentDistance = calculate_selcted_segemnt_distance(segment);
+                              double segmentDistance =
+                                  calculate_selcted_segemnt_distance(segment);
                               totalDistance += segmentDistance;
                             }
-                            _totalDistanceKM = totalDistance; // Distance in kilometers
+                            _totalDistanceKM =
+                                totalDistance; // Distance in kilometers
                             FirebaseDatabase.instance
                                 .ref()
                                 .child('totalDistance')
@@ -356,7 +365,8 @@ class _VideoScreenState extends State<VideoScreen> {
                               _selectedPathsQueue.addAll(selectedPaths);
                             });
                             if (!_isMoving) {
-                              _startMovement(_dronepath); // Start movement with the full path
+                              _startMovement(
+                                  _dronepath); // Start movement with the full path
                             }
                           },
                           child: const Text('Start Routing'),
@@ -372,8 +382,6 @@ class _VideoScreenState extends State<VideoScreen> {
       },
     );
   }
-
-
 
   void dronepath_Horizontal(List<LatLng> polygon, double pathWidth) {
     if (polygon.isEmpty) return;
@@ -422,6 +430,7 @@ class _VideoScreenState extends State<VideoScreen> {
       totalZigzagPathKm = totalDistancezigzagKm; // Update the distance here
     });
   }
+
   void dronepath_Vertical(List<LatLng> polygon, double pathWidth) {
     if (polygon.isEmpty) return;
     List<LatLng> sortedPoints = List.from(polygon);
@@ -478,7 +487,8 @@ class _VideoScreenState extends State<VideoScreen> {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setState) {
             return AlertDialog(
-              title: const Text('Enter Turn Length (meters) default is 10 meters'),
+              title:
+                  const Text('Enter Turn Length (meters) default is 10 meters'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -554,6 +564,7 @@ class _VideoScreenState extends State<VideoScreen> {
       }
     }
   }
+
   bool _isSegmentSelected(List<LatLng> path, int index) {
     if (index < path.length - 1) {
       List<LatLng> segment = path.sublist(index, index + 2);
@@ -565,6 +576,7 @@ class _VideoScreenState extends State<VideoScreen> {
     }
     return false;
   }
+
   bool _isSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
     if (segment1.length != segment2.length) {
       return false;
@@ -597,6 +609,7 @@ class _VideoScreenState extends State<VideoScreen> {
     _currentLocation = await _location.getLocation();
     setState(() {});
   }
+
   void _initializeFirebaseListener() {
     _latRef = FirebaseDatabase.instance.ref().child('Current_Lat');
     _longRef = FirebaseDatabase.instance.ref().child('Current_Long');
@@ -620,17 +633,16 @@ class _VideoScreenState extends State<VideoScreen> {
       _currentPosition = LatLng(lat, long);
     });
   }
-    @override
-    void dispose() {
-      _debounce?.cancel();
-      super.dispose();
-    }
-      void _hideKeyboard() {
-        FocusScope.of(context).previousFocus();
-      }
 
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
 
-
+  void _hideKeyboard() {
+    FocusScope.of(context).previousFocus();
+  }
 
 //UI BUILD
   @override
@@ -821,10 +833,10 @@ class _VideoScreenState extends State<VideoScreen> {
                 ],
               ),
             ),
-
-
             Container(
-              height: _isFullScreen ? MediaQuery.of(context).size.height * 0.85 : 400,
+              height: _isFullScreen
+                  ? MediaQuery.of(context).size.height * 0.85
+                  : 400,
               width: double.infinity,
               decoration: BoxDecoration(
                 border: Border.all(color: Colors.black, width: 2),
@@ -838,42 +850,46 @@ class _VideoScreenState extends State<VideoScreen> {
                     _currentLocation == null
                         ? const Center(child: CircularProgressIndicator())
                         : GoogleMap(
-                      initialCameraPosition: CameraPosition(
-                        target: LatLng(
-                          _currentLocation!.latitude!,
-                          _currentLocation!.longitude!,
-                        ),
-                        zoom: 15.0,
-                        //zoom:10.0,
-                      ),
-                      markers: {
-                        ..._markers,
-                        Marker(
-                          markerId: const MarkerId('currentLocation'),
-                          position: _currentPosition,
-                          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
-                        ),
-                      },
-                      polylines: _polylines,
-                      polygons: _polygons,
-                      zoomGesturesEnabled: true,
-                      rotateGesturesEnabled: true,
-                      buildingsEnabled: true,
-                      scrollGesturesEnabled: true,
-                      onTap: _onMapTap,
-                      onMapCreated: (controller) {
-                        _googleMapController = controller;
-                      },
-                      gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-                        Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
-                      },
-                      myLocationEnabled: true,
-                      myLocationButtonEnabled: true,
-                    ),
+                            initialCameraPosition: CameraPosition(
+                              target: LatLng(
+                                _currentLocation!.latitude!,
+                                _currentLocation!.longitude!,
+                              ),
+                              zoom: 15.0,
+                              //zoom:10.0,
+                            ),
+                            markers: {
+                              ..._markers,
+                              Marker(
+                                markerId: const MarkerId('currentLocation'),
+                                position: _currentPosition,
+                                icon: BitmapDescriptor.defaultMarkerWithHue(
+                                    BitmapDescriptor.hueViolet),
+                              ),
+                            },
+                            polylines: _polylines,
+                            polygons: _polygons,
+                            zoomGesturesEnabled: true,
+                            rotateGesturesEnabled: true,
+                            buildingsEnabled: true,
+                            scrollGesturesEnabled: true,
+                            onTap: _onMapTap,
+                            onMapCreated: (controller) {
+                              _googleMapController = controller;
+                            },
+                            gestureRecognizers: <Factory<
+                                OneSequenceGestureRecognizer>>{
+                              Factory<OneSequenceGestureRecognizer>(
+                                  () => EagerGestureRecognizer()),
+                            },
+                            myLocationEnabled: true,
+                            myLocationButtonEnabled: true,
+                          ),
                     Padding(
                       padding: const EdgeInsets.all(8.0),
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(30.0), // Capsule shape
+                        borderRadius:
+                            BorderRadius.circular(30.0), // Capsule shape
                         child: Container(
                           decoration: const BoxDecoration(
                             color: Colors.white,
@@ -883,34 +899,45 @@ class _VideoScreenState extends State<VideoScreen> {
                               focusNode: _focusNode,
                               autofocus: false,
                               style: const TextStyle(
-                                fontFamily: 'sans', // Replace with your font family
+                                fontFamily:
+                                    'sans', // Replace with your font family
                                 fontSize: 15.0, // Customize font size
                                 color: Colors.black, // Customize text color
                               ),
                               decoration: InputDecoration(
                                 border: InputBorder.none,
                                 labelText: 'Search Spraying Location',
-                                labelStyle:  const TextStyle(
+                                labelStyle: const TextStyle(
                                   fontFamily: 'impact',
-                                  fontWeight: FontWeight.w500,// Replace with your font family
+                                  fontWeight: FontWeight
+                                      .w500, // Replace with your font family
                                   fontSize: 14.0, // Customize label font size
                                   color: Colors.teal, // Customize label color
                                 ),
                                 suffixIcon: IconButton(
-                                  icon: Icon(Icons.search, color: Colors.black), // Customize icon color
-                                  onPressed: _hideKeyboard, // Hide keyboard on search button press
+                                  icon: Icon(Icons.search,
+                                      color:
+                                          Colors.black), // Customize icon color
+                                  onPressed:
+                                      _hideKeyboard, // Hide keyboard on search button press
                                 ),
-                                contentPadding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                                contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 16.0, vertical: 12.0),
                               ),
                             ),
                             suggestionsCallback: (pattern) {
-                              if (pattern.isEmpty) return Future.value(<geocoding.Placemark>[]);
+                              if (pattern.isEmpty)
+                                return Future.value(<geocoding.Placemark>[]);
                               _debounce?.cancel();
-                              final completer = Completer<List<geocoding.Placemark>>();
-                              _debounce = Timer(const Duration(microseconds: 1), () async {
+                              final completer =
+                                  Completer<List<geocoding.Placemark>>();
+                              _debounce = Timer(const Duration(microseconds: 1),
+                                  () async {
                                 List<geocoding.Placemark> placemarks = [];
                                 try {
-                                  List<geocoding.Location> locations = await geocoding.locationFromAddress(pattern);
+                                  List<geocoding.Location> locations =
+                                      await geocoding
+                                          .locationFromAddress(pattern);
                                   if (locations.isNotEmpty) {
                                     placemarks = await Future.wait(
                                       locations.map((location) =>
@@ -918,7 +945,8 @@ class _VideoScreenState extends State<VideoScreen> {
                                             location.latitude,
                                             location.longitude,
                                           )),
-                                    ).then((results) => results.expand((x) => x).toList());
+                                    ).then((results) =>
+                                        results.expand((x) => x).toList());
                                   }
                                 } catch (e) {
                                   // Handle error if needed
@@ -927,38 +955,51 @@ class _VideoScreenState extends State<VideoScreen> {
                               });
                               return completer.future;
                             },
-                            itemBuilder: (context, geocoding.Placemark suggestion) {
+                            itemBuilder:
+                                (context, geocoding.Placemark suggestion) {
                               return ListTile(
-                                leading: const Icon(Icons.location_on, color: Colors.green), // Customize icon color
+                                leading: const Icon(Icons.location_on,
+                                    color:
+                                        Colors.green), // Customize icon color
                                 title: Text(
-                                  suggestion.name ?? 'No Country/City Available',
+                                  suggestion.name ??
+                                      'No Country/City Available',
                                   style: const TextStyle(
-                                    fontFamily: 'sans', // Replace with your font family
+                                    fontFamily:
+                                        'sans', // Replace with your font family
                                     fontSize: 16.0,
-                                    fontWeight: FontWeight.w400, // Customize font size
+                                    fontWeight:
+                                        FontWeight.w400, // Customize font size
                                     color: Colors.black, // Customize text color
                                   ),
                                 ),
                                 subtitle: Text(
                                   suggestion.locality ?? 'No locality Exists',
                                   style: const TextStyle(
-                                    fontFamily: 'Arial', // Replace with your font family
+                                    fontFamily:
+                                        'Arial', // Replace with your font family
                                     fontSize: 14.0, // Customize font size
-                                    color: Colors.black54, // Customize text color
+                                    color:
+                                        Colors.black54, // Customize text color
                                   ),
                                 ),
                               );
                             },
-                            onSuggestionSelected: (geocoding.Placemark suggestion) async {
-                              final address = '${suggestion.name ?? ''}, ${suggestion.locality ?? ''}';
+                            onSuggestionSelected:
+                                (geocoding.Placemark suggestion) async {
+                              final address =
+                                  '${suggestion.name ?? ''}, ${suggestion.locality ?? ''}';
                               try {
-                                List<geocoding.Location> locations = await geocoding.locationFromAddress(address);
+                                List<geocoding.Location> locations =
+                                    await geocoding
+                                        .locationFromAddress(address);
                                 if (locations.isNotEmpty) {
                                   final location = locations.first;
                                   _googleMapController?.animateCamera(
                                     CameraUpdate.newCameraPosition(
                                       CameraPosition(
-                                        target: LatLng(location.latitude, location.longitude),
+                                        target: LatLng(location.latitude,
+                                            location.longitude),
                                         zoom: 15.0,
                                       ),
                                     ),
@@ -977,7 +1018,9 @@ class _VideoScreenState extends State<VideoScreen> {
                       right: 0,
                       child: IconButton(
                         icon: Icon(
-                          _isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                          _isFullScreen
+                              ? Icons.fullscreen_exit
+                              : Icons.fullscreen,
                           size: 40,
                           color: Colors.red,
                         ),
@@ -1292,4 +1335,4 @@ class _VideoScreenState extends State<VideoScreen> {
     double triangleArea = sphericalExcess * radiusOfEarth * radiusOfEarth;
     return triangleArea;
   }*/
-  }
+}

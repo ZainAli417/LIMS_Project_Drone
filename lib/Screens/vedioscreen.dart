@@ -115,7 +115,7 @@ class _VideoScreenState extends State<VideoScreen> {
   Timer? _movementTimer;
   final DatabaseReference _databaseReference = FirebaseDatabase.instance.ref();
   late GoogleMapController _googleMapController;
-  final List<Marker> _markers = [];
+  late List<Marker> _markers = [];
   final List<LatLng> _markerPositions = [];
   Set<Polyline> _polylines = {};
   Set<Polygon> _polygons = {};
@@ -384,6 +384,7 @@ class _VideoScreenState extends State<VideoScreen> {
   }
 
   void dronepath_Horizontal(List<LatLng> polygon, double pathWidth) {
+
     if (polygon.isEmpty) return;
     List<LatLng> sortedPoints = List.from(polygon);
     sortedPoints.sort((a, b) => a.latitude.compareTo(b.latitude));
@@ -430,6 +431,7 @@ class _VideoScreenState extends State<VideoScreen> {
   }
 
   void dronepath_Vertical(List<LatLng> polygon, double pathWidth) {
+
     if (polygon.isEmpty) return;
     List<LatLng> sortedPoints = List.from(polygon);
     sortedPoints.sort((a, b) => a.longitude.compareTo(b.longitude));
@@ -470,6 +472,7 @@ class _VideoScreenState extends State<VideoScreen> {
         points: dronepath,
         color: Colors.red,
         width: 3,
+
       ));
       totalZigzagPathKm = totalDistancezigzagKm; // Update the distance here
     });
@@ -526,6 +529,7 @@ class _VideoScreenState extends State<VideoScreen> {
                   onPressed: () {
                     Navigator.of(context).pop();
                     _closePolygon(turnLength);
+
                   },
                   child: const Text('OK'),
                 ),
@@ -1137,7 +1141,6 @@ class _VideoScreenState extends State<VideoScreen> {
       ),
     );
   }
-
   void _updateRouteData() {
     try {
       for (int i = 0; i < _markers.length; i++) {
@@ -1167,7 +1170,6 @@ class _VideoScreenState extends State<VideoScreen> {
       print('Error updating route data: $e');
     }
   }
-
   void _updatePolylines() {
     _polylines.clear();
     if (_markerPositions.length > 1) {
@@ -1181,19 +1183,21 @@ class _VideoScreenState extends State<VideoScreen> {
       }
     }
   }
-
   void _onMapTap(LatLng latLng) {
     final markerId = MarkerId('M${_markers.length + 1}');
     final newMarker = Marker(
       markerId: markerId,
       position: latLng,
       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+
       onTap: () {
         if (_markers.length > 2 && latLng == _markers.first.position) {
+          _initializeAndShowInfoWindows();
           Selecting_Path_Direction_and_Turn();
         }
       },
     );
+
     setState(() {
       _markers.add(newMarker);
       _markerPositions.add(latLng);
@@ -1202,8 +1206,40 @@ class _VideoScreenState extends State<VideoScreen> {
         _updateRouteData();
       }
     });
+
   }
-//update polylines
+
+// Function to initialize all markers with labels and show InfoWindows
+  void _initializeAndShowInfoWindows() {
+    List<Marker> updatedMarkers = [];
+    for (int i = 0; i < _markerPositions.length; i++) {
+      final markerId = MarkerId('M${i + 1}');
+      final markerLabel = 'M${i + 1}';
+      final updatedMarker = Marker(
+        markerId: markerId,
+        position: _markerPositions[i],
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+
+        infoWindow: InfoWindow(
+          title: markerLabel,
+        ),
+      );
+
+      updatedMarkers.add(updatedMarker);
+    }
+
+    setState(() {
+      _markers = updatedMarkers;
+    });
+
+    Future.delayed(Duration(milliseconds: 1000), ()  {
+      for (var marker in _markers) {
+        _googleMapController.showMarkerInfoWindow(marker.markerId);
+      }
+    });
+  }
+
+
 
 //area calculation of field
   double _calculateSphericalPolygonArea(List<LatLng> points) {

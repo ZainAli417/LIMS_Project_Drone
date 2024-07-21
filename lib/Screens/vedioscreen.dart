@@ -33,60 +33,16 @@ class _VideoScreenState extends State<VideoScreen> {
   // Left = 1
   // Right = 2
   // Stop = 0
-  void _updateValueInDatabase(int value) async {
-    try {
-      await _databaseReference.child('Direction').set(value);
-    } catch (e) {
-      print('Error updating value in database: $e');
-    }
-  }
-
-  void _updateValueInDatabaseOnRelease() async {
-    try {
-      await _databaseReference.child('Direction').set(0);
-    } catch (e) {
-      print('Error updating value in database: $e');
-    }
-  }
 
   @override
   void initState() {
     super.initState();
     _requestLocationPermission();
     _initializeFirebaseListener();
-    _carPosition = LatLng(0, 0); // Initialize with a default value
-  }
-
-  void _resetMarkers() async {
-    setState(() {
-      _markers
-          .removeWhere((marker) => marker.markerId == const MarkerId('car'));
-      _isMoving = false;
-      _currentPointIndex = 0;
-      _movementTimer?.cancel();
-      _markers.clear();
-      _markerPositions.clear();
-      _polylines.clear();
-      _polygons.clear();
-      _dronepath.clear();
-      _selectedPathsQueue.clear();
-      _totalDistanceKM = 0.0;
-      _remainingDistanceKM_SelectedPath = 0.0;
-      timeduration = 0.0;
-      TLM = 0.0;
-    });
-
-    try {
-      await _databaseReference.child('Markers').remove();
-      await _databaseReference.child('Route').remove();
-      await _databaseReference.child('Area').remove();
-      await _databaseReference.child('totalDistance').remove();
-      await _databaseReference.child('remainingDistance').remove();
-      await _databaseReference.child('TimeDuration').remove();
-      await _databaseReference.child('TimeLeft').remove();
-    } catch (e) {
-      print('Error resetting data in database: $e');
+    if (_markers.isNotEmpty) {
+      selectedMarker = _markers.first.position;
     }
+    _carPosition = LatLng(0, 0); // Initialize with a default value
   }
 
   LatLng _currentPosition = LatLng(0, 0); // Default position
@@ -118,10 +74,59 @@ class _VideoScreenState extends State<VideoScreen> {
   late List<Marker> _markers = [];
   final List<LatLng> _markerPositions = [];
   Set<Polyline> _polylines = {};
-  Set<Polygon> _polygons = {};
+  Set<Polygon> polygons = {};
   List<LatLng> _dronepath = [];
   double _remainingDistanceKM_TotalPath = 0.0;
+  List<LatLng> polygonPoints = [];
+  double pathWidth = 10.0;
+  late LatLng? selectedMarker = _markers.isNotEmpty ? _markers.first.position : null;
 
+  void _updateValueInDatabase(int value) async {
+    try {
+      await _databaseReference.child('Direction').set(value);
+    } catch (e) {
+      print('Error updating value in database: $e');
+    }
+  }
+  void _updateValueInDatabaseOnRelease() async {
+    try {
+      await _databaseReference.child('Direction').set(0);
+    } catch (e) {
+      print('Error updating value in database: $e');
+    }
+  }
+  void _resetMarkers() async {
+    setState(() {
+      _markers
+          .removeWhere((marker) => marker.markerId == const MarkerId('car'));
+      _isMoving = false;
+      _currentPointIndex = 0;
+      _movementTimer?.cancel();
+      _markers.clear();
+      _markerPositions.clear();
+      _polylines.clear();
+      polygons.clear();
+      selectedMarker = null;
+      _dronepath.clear();
+      _selectedPathsQueue.clear();
+      _totalDistanceKM = 0.0;
+      _remainingDistanceKM_SelectedPath = 0.0;
+      timeduration = 0.0;
+      TLM = 0.0;
+    });
+
+    try {
+      await _databaseReference.child('Markers').remove();
+      await _databaseReference.child('Route').remove();
+      await _databaseReference.child('Area').remove();
+      await _databaseReference.child('totalDistance').remove();
+      await _databaseReference.child('remainingDistance').remove();
+      await _databaseReference.child('TimeDuration').remove();
+      await _databaseReference.child('TimeLeft').remove();
+    } catch (e) {
+      print('Error resetting data in database: $e');
+    }
+  }
   double calculate_selcted_segemnt_distance(List<LatLng> path) {
     double totalDistance = 0.0;
     for (int i = 0; i < path.length - 1; i++) {
@@ -131,13 +136,11 @@ class _VideoScreenState extends State<VideoScreen> {
 
     return totalDistance;
   } // Return distance in kilometers
-
   LatLng _lerpLatLng(LatLng a, LatLng b, double t) {
     double lat = a.latitude + (b.latitude - a.latitude) * t;
     double lng = a.longitude + (b.longitude - a.longitude) * t;
     return LatLng(lat, lng);
   }
-
   void _storeTimeDurationInDatabase(double totalDistanceInKM) {
     try {
       const double speed = 10; // Speed in meters per second
@@ -151,7 +154,6 @@ class _VideoScreenState extends State<VideoScreen> {
       print('Error storing time duration in database: $e');
     }
   }
-
   void _storeTimeLeftInDatabase(double remainingDistanceKM_SelectedPath) async {
     try {
       const double speed = 10; // Speed in meters per second
@@ -165,7 +167,6 @@ class _VideoScreenState extends State<VideoScreen> {
       print('Error storing time duration in database: $e');
     }
   }
-
   double calculateonelinedistance(LatLng start, LatLng end) {
     const R = 6371; // Radius of the Earth in kilometers
     double lat1 = start.latitude * pi / 180;
@@ -179,7 +180,6 @@ class _VideoScreenState extends State<VideoScreen> {
     double c = 2 * atan2(sqrt(a), sqrt(1 - a));
     return R * c; // Distance in kilometers
   }
-
   double _calculateTotalDistanceZIGAG(List<LatLng> path) {
     double totalzigzagdis = 0.0;
     for (int i = 0; i < path.length - 1; i++) {
@@ -187,7 +187,6 @@ class _VideoScreenState extends State<VideoScreen> {
     }
     return totalzigzagdis;
   } // Return distance in kilometers
-
   void _startMovement(List<LatLng> path) {
     if (path.isEmpty) {
       print("Path is empty, cannot start movement");
@@ -264,7 +263,6 @@ class _VideoScreenState extends State<VideoScreen> {
       }
     });
   }
-
   void _onPathComplete() {
     // Clear all paths and stop movement
     setState(() {
@@ -274,7 +272,6 @@ class _VideoScreenState extends State<VideoScreen> {
           .removeWhere((marker) => marker.markerId == const MarkerId('car'));
     });
   }
-
   Future<void> _addCarMarker(bool isSelectedSegment) async {
     setState(() {
       _markers.add(Marker(
@@ -286,7 +283,6 @@ class _VideoScreenState extends State<VideoScreen> {
       ));
     });
   }
-
   void _showRoutesDialog() {
     List<int> selectedSegments = [];
     showDialog(
@@ -382,30 +378,37 @@ class _VideoScreenState extends State<VideoScreen> {
       },
     );
   }
+  void dronepath_Horizontal(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
+    if (polygon.isEmpty || startPoint == null) return;
 
-  void dronepath_Horizontal(List<LatLng> polygon, double pathWidth) {
-
-    if (polygon.isEmpty) return;
+    // Sort polygon points based on latitude
     List<LatLng> sortedPoints = List.from(polygon);
     sortedPoints.sort((a, b) => a.latitude.compareTo(b.latitude));
+
     double minLat = sortedPoints.first.latitude;
     double maxLat = sortedPoints.last.latitude;
+
+    // Find the closest latitude in sortedPoints to the selectedMarker
+    double startLat = startPoint.latitude.clamp(minLat, maxLat);
+
     List<LatLng> dronepath = [];
     bool leftToRight = true;
-    for (double lat = minLat; lat <= maxLat; lat += pathWidth / 111111) {
+
+    // Generate path from the starting point upwards
+    for (double lat = startLat; lat <= maxLat; lat += pathWidth / 111111) {
       List<LatLng> intersections = [];
       for (int i = 0; i < polygon.length; i++) {
         LatLng p1 = polygon[i];
         LatLng p2 = polygon[(i + 1) % polygon.length];
-        if ((p1.latitude <= lat && p2.latitude >= lat) ||
-            (p1.latitude >= lat && p2.latitude <= lat)) {
-          double lng = p1.longitude +
-              (lat - p1.latitude) *
-                  (p2.longitude - p1.longitude) /
-                  (p2.latitude - p1.latitude);
+        if ((p1.latitude <= lat && p2.latitude >= lat) || (p1.latitude >= lat && p2.latitude <= lat)) {
+          double lng = p1.longitude + (lat - p1.latitude) * (p2.longitude - p1.longitude) / (p2.latitude - p1.latitude);
           intersections.add(LatLng(lat, lng));
         }
       }
+
+      // Add debugging information
+      print('Latitude: $lat, Intersections: ${intersections.length}');
+
       if (intersections.length == 2) {
         intersections.sort((a, b) => a.longitude.compareTo(b.longitude));
         if (leftToRight) {
@@ -416,30 +419,73 @@ class _VideoScreenState extends State<VideoScreen> {
         leftToRight = !leftToRight;
       }
     }
+
+    // Generate path from the starting point downwards
+    for (double lat = startLat - pathWidth / 111111; lat >= minLat; lat -= pathWidth / 111111) {
+      List<LatLng> intersections = [];
+      for (int i = 0; i < polygon.length; i++) {
+        LatLng p1 = polygon[i];
+        LatLng p2 = polygon[(i + 1) % polygon.length];
+        if ((p1.latitude <= lat && p2.latitude >= lat) || (p1.latitude >= lat && p2.latitude <= lat)) {
+          double lng = p1.longitude + (lat - p1.latitude) * (p2.longitude - p1.longitude) / (p2.latitude - p1.latitude);
+          intersections.add(LatLng(lat, lng));
+        }
+      }
+
+      // Add debugging information
+      print('Latitude: $lat, Intersections: ${intersections.length}');
+
+      if (intersections.length == 2) {
+        intersections.sort((a, b) => a.longitude.compareTo(b.longitude));
+        if (leftToRight) {
+          dronepath.addAll(intersections);
+        } else {
+          dronepath.addAll(intersections.reversed);
+        }
+        leftToRight = !leftToRight;
+      }
+    }
+
+    // Ensure the starting point is added first
+    dronepath.insert(0, startPoint);
+
+    // Check if dronepath is not empty
+    if (dronepath.isEmpty) {
+      print('No path generated.');
+    } else {
+      print('Generated path: $dronepath');
+    }
+
     double totalDistancezigzagKm = _calculateTotalDistanceZIGAG(dronepath);
 
     setState(() {
-      _dronepath = dronepath; // Update the state with the new drone path
+      _dronepath = dronepath;
       _polylines.add(Polyline(
         polylineId: const PolylineId('dronepath'),
         points: dronepath,
         color: Colors.red,
         width: 3,
       ));
-      totalZigzagPathKm = totalDistancezigzagKm; // Update the distance here
+      totalZigzagPathKm = totalDistancezigzagKm;
     });
   }
 
-  void dronepath_Vertical(List<LatLng> polygon, double pathWidth) {
-
+  void dronepath_Vertical(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
+
     List<LatLng> sortedPoints = List.from(polygon);
     sortedPoints.sort((a, b) => a.longitude.compareTo(b.longitude));
+
     double minLng = sortedPoints.first.longitude;
     double maxLng = sortedPoints.last.longitude;
+
+    double startLng = startPoint.longitude.clamp(minLng, maxLng);
+
     List<LatLng> dronepath = [];
     bool bottomToTop = true;
-    for (double lng = minLng; lng <= maxLng; lng += pathWidth / 111111) {
+
+    // Determine the initial direction based on the starting point
+    for (double lng = startLng; lng <= maxLng; lng += pathWidth / 111111) {
       List<LatLng> intersections = [];
       for (int i = 0; i < polygon.length; i++) {
         LatLng p1 = polygon[i];
@@ -463,6 +509,36 @@ class _VideoScreenState extends State<VideoScreen> {
         bottomToTop = !bottomToTop;
       }
     }
+
+    // Reverse the order to ensure the path covers the remaining part of the polygon
+    for (double lng = startLng - pathWidth / 111111; lng >= minLng; lng -= pathWidth / 111111) {
+      List<LatLng> intersections = [];
+      for (int i = 0; i < polygon.length; i++) {
+        LatLng p1 = polygon[i];
+        LatLng p2 = polygon[(i + 1) % polygon.length];
+        if ((p1.longitude <= lng && p2.longitude >= lng) ||
+            (p1.longitude >= lng && p2.longitude <= lng)) {
+          double lat = p1.latitude +
+              (lng - p1.longitude) *
+                  (p2.latitude - p1.latitude) /
+                  (p2.longitude - p1.longitude);
+          intersections.add(LatLng(lat, lng));
+        }
+      }
+      if (intersections.length == 2) {
+        intersections.sort((a, b) => a.latitude.compareTo(b.latitude));
+        if (bottomToTop) {
+          dronepath.addAll(intersections);
+        } else {
+          dronepath.addAll(intersections.reversed);
+        }
+        bottomToTop = !bottomToTop;
+      }
+    }
+
+    // Ensure the starting point is added first
+    dronepath.insert(0, startPoint);
+
     double totalDistancezigzagKm = _calculateTotalDistanceZIGAG(dronepath);
 
     setState(() {
@@ -472,12 +548,19 @@ class _VideoScreenState extends State<VideoScreen> {
         points: dronepath,
         color: Colors.red,
         width: 3,
-
       ));
       totalZigzagPathKm = totalDistancezigzagKm; // Update the distance here
     });
   }
 
+// Extracting LatLng points from markers
+  void extractLatLngPoints() {
+    if (polygons.isNotEmpty) {
+      polygonPoints = polygons.first.points.toList();
+    }
+  }
+
+// Dialog for selecting path direction and starting point
   void Selecting_Path_Direction_and_Turn() {
     double turnLength = 10.0; // Default turn length
     showDialog(
@@ -486,8 +569,7 @@ class _VideoScreenState extends State<VideoScreen> {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setState) {
             return AlertDialog(
-              title:
-                  const Text('Enter Turn Length (meters) default is 10 meters'),
+              title: const Text('Enter Turn Length (meters) default is 10 meters'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -522,14 +604,36 @@ class _VideoScreenState extends State<VideoScreen> {
                       const Text('Vertical'),
                     ],
                   ),
+                  const SizedBox(height: 10),
+                  const Text('Choose Starting Point'),
+                  DropdownButton<LatLng>(
+                    value: selectedMarker,
+                    isExpanded: true,
+                    items: _markers.map((marker) {
+                      return DropdownMenuItem<LatLng>(
+                        value: marker.position,
+                        child: Text('${marker.markerId.value}'),
+                      );
+                    }).toList(),
+                    onChanged: (LatLng? newValue) {
+                      setState(() {
+                        selectedMarker = newValue;
+                      });
+                    },
+                  ),
                 ],
               ),
               actions: <Widget>[
                 TextButton(
                   onPressed: () {
                     Navigator.of(context).pop();
+                    extractLatLngPoints();
+                    if (_selectedDirection == PathDirection.vertical) {
+                      dronepath_Vertical(polygonPoints, pathWidth, selectedMarker!);
+                    } else {
+                      dronepath_Horizontal(polygonPoints, pathWidth, selectedMarker!);
+                    }
                     _closePolygon(turnLength);
-
                   },
                   child: const Text('OK'),
                 ),
@@ -544,7 +648,7 @@ class _VideoScreenState extends State<VideoScreen> {
   Future<void> _closePolygon(double turnLength) async {
     setState(() {
       _polylines.clear();
-      _polygons.add(Polygon(
+      polygons.add(Polygon(
         polygonId: const PolygonId('polygon'),
         points: _markerPositions,
         strokeColor: Colors.blue,
@@ -552,15 +656,20 @@ class _VideoScreenState extends State<VideoScreen> {
         fillColor: Colors.blue.withOpacity(0.2),
       ));
     });
+
     if (_selectedDirection == PathDirection.horizontal) {
-      dronepath_Horizontal(_markerPositions, turnLength);
+      dronepath_Horizontal(_markerPositions, turnLength, selectedMarker!);
     } else {
-      dronepath_Vertical(_markerPositions, turnLength);
-      double area = _calculateSphericalPolygonArea(_markerPositions);
-      try {
-        await _databaseReference.child('Area').set(area);
-      } catch (e) {
-        print('Error updating area in database: $e');
+      if (_selectedDirection == PathDirection.vertical) {
+        dronepath_Vertical(_markerPositions, turnLength, selectedMarker!);
+        double area = _calculateSphericalPolygonArea(_markerPositions);
+        try {
+          await _databaseReference.child('Area').set(area);
+        } catch (e) {
+          print('Error updating area in database: $e');
+        }
+      } else {
+        print('No starting point selected for vertical path generation.');
       }
     }
   }
@@ -576,7 +685,6 @@ class _VideoScreenState extends State<VideoScreen> {
     }
     return false;
   }
-
   bool _isSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
     if (segment1.length != segment2.length) {
       return false;
@@ -588,7 +696,6 @@ class _VideoScreenState extends State<VideoScreen> {
     }
     return true;
   }
-
   Future<void> _requestLocationPermission() async {
     bool _serviceEnabled;
     PermissionStatus _permissionGranted;
@@ -609,7 +716,6 @@ class _VideoScreenState extends State<VideoScreen> {
     _currentLocation = await _location.getLocation();
     setState(() {});
   }
-
   void _initializeFirebaseListener() {
     _latRef = FirebaseDatabase.instance.ref().child('Current_Lat');
     _longRef = FirebaseDatabase.instance.ref().child('Current_Long');
@@ -627,19 +733,16 @@ class _VideoScreenState extends State<VideoScreen> {
       }
     });
   }
-
   void _updateMarkerPosition(double lat, double long) {
     setState(() {
       _currentPosition = LatLng(lat, long);
     });
   }
-
   @override
   void dispose() {
     _debounce?.cancel();
     super.dispose();
   }
-
   void _hideKeyboard() {
     FocusScope.of(context).previousFocus();
   }
@@ -868,7 +971,7 @@ class _VideoScreenState extends State<VideoScreen> {
                               ),
                             },
                             polylines: _polylines,
-                            polygons: _polygons,
+                            polygons: polygons,
                             zoomGesturesEnabled: true,
                             rotateGesturesEnabled: true,
                             buildingsEnabled: true,
@@ -1039,7 +1142,7 @@ class _VideoScreenState extends State<VideoScreen> {
                         child: const Text('Start'),
                       ),
                     ),
-                    if (_polygons.isNotEmpty)
+                    if (polygons.isNotEmpty)
                       Positioned(
                         top: 70,
                         left: 5,
@@ -1141,6 +1244,8 @@ class _VideoScreenState extends State<VideoScreen> {
       ),
     );
   }
+
+
   void _updateRouteData() {
     try {
       for (int i = 0; i < _markers.length; i++) {
@@ -1208,7 +1313,6 @@ class _VideoScreenState extends State<VideoScreen> {
     });
 
   }
-
 // Function to initialize all markers with labels and show InfoWindows
   void _initializeAndShowInfoWindows() {
     List<Marker> updatedMarkers = [];

@@ -416,9 +416,7 @@ class _VideoScreenState extends State<VideoScreen> {
       }
     }
     double totalDistancezigzagKm = _calculateTotalDistanceZIGAG(dronepath);
-    if (kDebugMode) {
-      print('Total zigzag distance: $totalDistancezigzagKm km');
-    }
+
     setState(() {
       _dronepath = dronepath; // Update the state with the new drone path
       _polylines.add(Polyline(
@@ -464,9 +462,7 @@ class _VideoScreenState extends State<VideoScreen> {
       }
     }
     double totalDistancezigzagKm = _calculateTotalDistanceZIGAG(dronepath);
-    if (kDebugMode) {
-      print('Total zigzag distance: $totalDistancezigzagKm km');
-    }
+
     setState(() {
       _dronepath = dronepath; // Update the state with the new drone path
       _polylines.add(Polyline(

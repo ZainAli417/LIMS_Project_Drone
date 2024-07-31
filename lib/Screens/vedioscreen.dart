@@ -68,18 +68,19 @@ class _VideoScreenState extends State<VideoScreen> {
   bool _isMoving = false;
   late LatLng _carPosition;
   int _currentPointIndex = 0;
-  Timer? _movementTimer;
-  final DatabaseReference _databaseReference = FirebaseDatabase.instance.ref();
-  late GoogleMapController _googleMapController;
   late List<Marker> _markers = [];
   final List<LatLng> _markerPositions = [];
   Set<Polyline> _polylines = {};
   Set<Polygon> polygons = {};
   List<LatLng> _dronepath = [];
+  late LatLng? selectedMarker = _markers.isNotEmpty ? _markers.first.position : null;
+  late GoogleMapController _googleMapController;
+  final DatabaseReference _databaseReference = FirebaseDatabase.instance.ref();
+  Timer? _movementTimer;
+
   double _remainingDistanceKM_TotalPath = 0.0;
   List<LatLng> polygonPoints = [];
   double pathWidth = 10.0;
-  late LatLng? selectedMarker = _markers.isNotEmpty ? _markers.first.position : null;
 
   void _updateValueInDatabase(int value) async {
     try {
@@ -213,7 +214,7 @@ class _VideoScreenState extends State<VideoScreen> {
         double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
         segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
         double segmentProgress =
-            (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+        (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
         _carPosition = _lerpLatLng(start, end, segmentProgress);
         bool isSelectedSegment = _isSegmentSelected(path, _currentPointIndex);
         distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
@@ -243,7 +244,7 @@ class _VideoScreenState extends State<VideoScreen> {
         });
         setState(() {
           _markers.removeWhere(
-              (marker) => marker.markerId == const MarkerId('car'));
+                  (marker) => marker.markerId == const MarkerId('car'));
           _addCarMarker(isSelectedSegment);
           if (segmentProgress >= 1.0) {
             _currentPointIndex++;
@@ -278,8 +279,8 @@ class _VideoScreenState extends State<VideoScreen> {
         markerId: const MarkerId('car'),
         position: _carPosition,
         icon: isSelectedSegment
-            ? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen)
-            : BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+            ? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed)
+            : BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
       ));
     });
   }
@@ -327,7 +328,7 @@ class _VideoScreenState extends State<VideoScreen> {
                             setState(() {
                               selectedSegments = List.generate(
                                 (_dronepath.length - 1) ~/ 2,
-                                (i) => i,
+                                    (i) => i,
                               );
                             });
                           },
@@ -347,7 +348,7 @@ class _VideoScreenState extends State<VideoScreen> {
                               );
                               selectedPaths.add(segment);
                               double segmentDistance =
-                                  calculate_selcted_segemnt_distance(segment);
+                              calculate_selcted_segemnt_distance(segment);
                               totalDistance += segmentDistance;
                             }
                             _totalDistanceKM =
@@ -378,37 +379,41 @@ class _VideoScreenState extends State<VideoScreen> {
       },
     );
   }
-  void dronepath_Horizontal(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
-    if (polygon.isEmpty || startPoint == null) return;
 
-    // Sort polygon points based on latitude
+
+
+
+  void dronepath_Horizontal(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
+    if (polygon.isEmpty) return;
+
     List<LatLng> sortedPoints = List.from(polygon);
     sortedPoints.sort((a, b) => a.latitude.compareTo(b.latitude));
 
     double minLat = sortedPoints.first.latitude;
     double maxLat = sortedPoints.last.latitude;
 
-    // Find the closest latitude in sortedPoints to the selectedMarker
     double startLat = startPoint.latitude.clamp(minLat, maxLat);
 
     List<LatLng> dronepath = [];
     bool leftToRight = true;
 
-    // Generate path from the starting point upwards
-    for (double lat = startLat; lat <= maxLat; lat += pathWidth / 111111) {
+    double latIncrement = pathWidth / 111111; // Convert pathWidth to degrees
+
+    // Generate path from the starting point downwards
+    for (double lat = startLat; lat <= maxLat; lat += latIncrement) {
       List<LatLng> intersections = [];
       for (int i = 0; i < polygon.length; i++) {
         LatLng p1 = polygon[i];
         LatLng p2 = polygon[(i + 1) % polygon.length];
-        if ((p1.latitude <= lat && p2.latitude >= lat) || (p1.latitude >= lat && p2.latitude <= lat)) {
-          double lng = p1.longitude + (lat - p1.latitude) * (p2.longitude - p1.longitude) / (p2.latitude - p1.latitude);
+        if ((p1.latitude <= lat && p2.latitude >= lat) ||
+            (p1.latitude >= lat && p2.latitude <= lat)) {
+          double lng = p1.longitude +
+              (lat - p1.latitude) *
+                  (p2.longitude - p1.longitude) /
+                  (p2.latitude - p1.latitude);
           intersections.add(LatLng(lat, lng));
         }
       }
-
-      // Add debugging information
-      print('Latitude: $lat, Intersections: ${intersections.length}');
-
       if (intersections.length == 2) {
         intersections.sort((a, b) => a.longitude.compareTo(b.longitude));
         if (leftToRight) {
@@ -420,21 +425,21 @@ class _VideoScreenState extends State<VideoScreen> {
       }
     }
 
-    // Generate path from the starting point downwards
-    for (double lat = startLat - pathWidth / 111111; lat >= minLat; lat -= pathWidth / 111111) {
+    // Generate path from the starting point upwards
+    for (double lat = startLat - latIncrement; lat >= minLat; lat -= latIncrement) {
       List<LatLng> intersections = [];
       for (int i = 0; i < polygon.length; i++) {
         LatLng p1 = polygon[i];
         LatLng p2 = polygon[(i + 1) % polygon.length];
-        if ((p1.latitude <= lat && p2.latitude >= lat) || (p1.latitude >= lat && p2.latitude <= lat)) {
-          double lng = p1.longitude + (lat - p1.latitude) * (p2.longitude - p1.longitude) / (p2.latitude - p1.latitude);
+        if ((p1.latitude <= lat && p2.latitude >= lat) ||
+            (p1.latitude >= lat && p2.latitude <= lat)) {
+          double lng = p1.longitude +
+              (lat - p1.latitude) *
+                  (p2.longitude - p1.longitude) /
+                  (p2.latitude - p1.latitude);
           intersections.add(LatLng(lat, lng));
         }
       }
-
-      // Add debugging information
-      print('Latitude: $lat, Intersections: ${intersections.length}');
-
       if (intersections.length == 2) {
         intersections.sort((a, b) => a.longitude.compareTo(b.longitude));
         if (leftToRight) {
@@ -449,26 +454,21 @@ class _VideoScreenState extends State<VideoScreen> {
     // Ensure the starting point is added first
     dronepath.insert(0, startPoint);
 
-    // Check if dronepath is not empty
-    if (dronepath.isEmpty) {
-      print('No path generated.');
-    } else {
-      print('Generated path: $dronepath');
-    }
-
     double totalDistancezigzagKm = _calculateTotalDistanceZIGAG(dronepath);
 
     setState(() {
-      _dronepath = dronepath;
+      _dronepath = dronepath; // Update the state with the new drone path
       _polylines.add(Polyline(
         polylineId: const PolylineId('dronepath'),
         points: dronepath,
         color: Colors.red,
         width: 3,
       ));
-      totalZigzagPathKm = totalDistancezigzagKm;
+      totalZigzagPathKm = totalDistancezigzagKm; // Update the distance here
     });
   }
+
+
 
   void dronepath_Vertical(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
@@ -484,8 +484,10 @@ class _VideoScreenState extends State<VideoScreen> {
     List<LatLng> dronepath = [];
     bool bottomToTop = true;
 
-    // Determine the initial direction based on the starting point
-    for (double lng = startLng; lng <= maxLng; lng += pathWidth / 111111) {
+    double lngIncrement = pathWidth / 111111; // Convert pathWidth to degrees
+
+    // Generate path from the starting point to the right
+    for (double lng = startLng; lng <= maxLng; lng += lngIncrement) {
       List<LatLng> intersections = [];
       for (int i = 0; i < polygon.length; i++) {
         LatLng p1 = polygon[i];
@@ -510,8 +512,8 @@ class _VideoScreenState extends State<VideoScreen> {
       }
     }
 
-    // Reverse the order to ensure the path covers the remaining part of the polygon
-    for (double lng = startLng - pathWidth / 111111; lng >= minLng; lng -= pathWidth / 111111) {
+    // Generate path from the starting point to the left
+    for (double lng = startLng - lngIncrement; lng >= minLng; lng -= lngIncrement) {
       List<LatLng> intersections = [];
       for (int i = 0; i < polygon.length; i++) {
         LatLng p1 = polygon[i];
@@ -553,12 +555,20 @@ class _VideoScreenState extends State<VideoScreen> {
     });
   }
 
+
+
+
+
+
+
+
 // Extracting LatLng points from markers
   void extractLatLngPoints() {
     if (polygons.isNotEmpty) {
       polygonPoints = polygons.first.points.toList();
     }
   }
+
 
 // Dialog for selecting path direction and starting point
   void Selecting_Path_Direction_and_Turn() {
@@ -953,46 +963,46 @@ class _VideoScreenState extends State<VideoScreen> {
                     _currentLocation == null
                         ? const Center(child: CircularProgressIndicator())
                         : GoogleMap(
-                            initialCameraPosition: CameraPosition(
-                              target: LatLng(
-                                _currentLocation!.latitude!,
-                                _currentLocation!.longitude!,
-                              ),
-                              zoom: 15.0,
-                              //zoom:10.0,
-                            ),
-                            markers: {
-                              ..._markers,
-                              Marker(
-                                markerId: const MarkerId('currentLocation'),
-                                position: _currentPosition,
-                                icon: BitmapDescriptor.defaultMarkerWithHue(
-                                    BitmapDescriptor.hueViolet),
-                              ),
-                            },
-                            polylines: _polylines,
-                            polygons: polygons,
-                            zoomGesturesEnabled: true,
-                            rotateGesturesEnabled: true,
-                            buildingsEnabled: true,
-                            scrollGesturesEnabled: true,
-                            onTap: _onMapTap,
-                            onMapCreated: (controller) {
-                              _googleMapController = controller;
-                            },
-                            gestureRecognizers: <Factory<
-                                OneSequenceGestureRecognizer>>{
-                              Factory<OneSequenceGestureRecognizer>(
-                                  () => EagerGestureRecognizer()),
-                            },
-                            myLocationEnabled: true,
-                            myLocationButtonEnabled: true,
-                          ),
+                      initialCameraPosition: CameraPosition(
+                        target: LatLng(
+                          _currentLocation!.latitude!,
+                          _currentLocation!.longitude!,
+                        ),
+                        zoom: 15.0,
+                        //zoom:10.0,
+                      ),
+                      markers: {
+                        ..._markers,
+                        Marker(
+                          markerId: const MarkerId('currentLocation'),
+                          position: _currentPosition,
+                          icon: BitmapDescriptor.defaultMarkerWithHue(
+                              BitmapDescriptor.hueViolet),
+                        ),
+                      },
+                      polylines: _polylines,
+                      polygons: polygons,
+                      zoomGesturesEnabled: true,
+                      rotateGesturesEnabled: true,
+                      buildingsEnabled: true,
+                      scrollGesturesEnabled: true,
+                      onTap: _onMapTap,
+                      onMapCreated: (controller) {
+                        _googleMapController = controller;
+                      },
+                      gestureRecognizers: <Factory<
+                          OneSequenceGestureRecognizer>>{
+                        Factory<OneSequenceGestureRecognizer>(
+                                () => EagerGestureRecognizer()),
+                      },
+                      myLocationEnabled: true,
+                      myLocationButtonEnabled: true,
+                    ),
                     Padding(
                       padding: const EdgeInsets.all(8.0),
                       child: ClipRRect(
                         borderRadius:
-                            BorderRadius.circular(30.0), // Capsule shape
+                        BorderRadius.circular(30.0), // Capsule shape
                         child: Container(
                           decoration: const BoxDecoration(
                             color: Colors.white,
@@ -1003,7 +1013,7 @@ class _VideoScreenState extends State<VideoScreen> {
                               autofocus: false,
                               style: const TextStyle(
                                 fontFamily:
-                                    'sans', // Replace with your font family
+                                'sans', // Replace with your font family
                                 fontSize: 15.0, // Customize font size
                                 color: Colors.black, // Customize text color
                               ),
@@ -1020,9 +1030,9 @@ class _VideoScreenState extends State<VideoScreen> {
                                 suffixIcon: IconButton(
                                   icon: Icon(Icons.search,
                                       color:
-                                          Colors.black), // Customize icon color
+                                      Colors.black), // Customize icon color
                                   onPressed:
-                                      _hideKeyboard, // Hide keyboard on search button press
+                                  _hideKeyboard, // Hide keyboard on search button press
                                 ),
                                 contentPadding: EdgeInsets.symmetric(
                                     horizontal: 16.0, vertical: 12.0),
@@ -1033,29 +1043,29 @@ class _VideoScreenState extends State<VideoScreen> {
                                 return Future.value(<geocoding.Placemark>[]);
                               _debounce?.cancel();
                               final completer =
-                                  Completer<List<geocoding.Placemark>>();
+                              Completer<List<geocoding.Placemark>>();
                               _debounce = Timer(const Duration(microseconds: 1),
-                                  () async {
-                                List<geocoding.Placemark> placemarks = [];
-                                try {
-                                  List<geocoding.Location> locations =
+                                      () async {
+                                    List<geocoding.Placemark> placemarks = [];
+                                    try {
+                                      List<geocoding.Location> locations =
                                       await geocoding
                                           .locationFromAddress(pattern);
-                                  if (locations.isNotEmpty) {
-                                    placemarks = await Future.wait(
-                                      locations.map((location) =>
-                                          geocoding.placemarkFromCoordinates(
-                                            location.latitude,
-                                            location.longitude,
-                                          )),
-                                    ).then((results) =>
-                                        results.expand((x) => x).toList());
-                                  }
-                                } catch (e) {
-                                  // Handle error if needed
-                                }
-                                completer.complete(placemarks);
-                              });
+                                      if (locations.isNotEmpty) {
+                                        placemarks = await Future.wait(
+                                          locations.map((location) =>
+                                              geocoding.placemarkFromCoordinates(
+                                                location.latitude,
+                                                location.longitude,
+                                              )),
+                                        ).then((results) =>
+                                            results.expand((x) => x).toList());
+                                      }
+                                    } catch (e) {
+                                      // Handle error if needed
+                                    }
+                                    completer.complete(placemarks);
+                                  });
                               return completer.future;
                             },
                             itemBuilder:
@@ -1063,16 +1073,16 @@ class _VideoScreenState extends State<VideoScreen> {
                               return ListTile(
                                 leading: const Icon(Icons.location_on,
                                     color:
-                                        Colors.green), // Customize icon color
+                                    Colors.green), // Customize icon color
                                 title: Text(
                                   suggestion.name ??
                                       'No Country/City Available',
                                   style: const TextStyle(
                                     fontFamily:
-                                        'sans', // Replace with your font family
+                                    'sans', // Replace with your font family
                                     fontSize: 16.0,
                                     fontWeight:
-                                        FontWeight.w400, // Customize font size
+                                    FontWeight.w400, // Customize font size
                                     color: Colors.black, // Customize text color
                                   ),
                                 ),
@@ -1080,10 +1090,10 @@ class _VideoScreenState extends State<VideoScreen> {
                                   suggestion.locality ?? 'No locality Exists',
                                   style: const TextStyle(
                                     fontFamily:
-                                        'Arial', // Replace with your font family
+                                    'Arial', // Replace with your font family
                                     fontSize: 14.0, // Customize font size
                                     color:
-                                        Colors.black54, // Customize text color
+                                    Colors.black54, // Customize text color
                                   ),
                                 ),
                               );
@@ -1094,8 +1104,8 @@ class _VideoScreenState extends State<VideoScreen> {
                                   '${suggestion.name ?? ''}, ${suggestion.locality ?? ''}';
                               try {
                                 List<geocoding.Location> locations =
-                                    await geocoding
-                                        .locationFromAddress(address);
+                                await geocoding
+                                    .locationFromAddress(address);
                                 if (locations.isNotEmpty) {
                                   final location = locations.first;
                                   _googleMapController?.animateCamera(
@@ -1176,7 +1186,7 @@ class _VideoScreenState extends State<VideoScreen> {
                                 ),
                               ),
                               Text(
-                                "Reamining Path Dis.: ${_remainingDistanceKM_TotalPath.toStringAsFixed(2)} Km",
+                                "Remaining Path Dis.: ${_remainingDistanceKM_TotalPath.toStringAsFixed(2)} Km",
                                 style: const TextStyle(
                                   color: Colors.green,
                                   fontSize: 13,
@@ -1294,6 +1304,30 @@ class _VideoScreenState extends State<VideoScreen> {
       markerId: markerId,
       position: latLng,
       icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+      onTap: () {
+        if (_markers.length > 2 && latLng == _markers.first.position) {
+          Selecting_Path_Direction_and_Turn();
+        }
+      },
+    );
+    setState(() {
+      _markers.add(newMarker);
+      _markerPositions.add(latLng);
+      if (_markers.length > 1) {
+        _updatePolylines();
+        _updateRouteData();
+      }
+    });
+  }
+
+
+  /*
+  void _onMapTap(LatLng latLng) {
+    final markerId = MarkerId('M${_markers.length + 1}');
+    final newMarker = Marker(
+      markerId: markerId,
+      position: latLng,
+      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
 
       onTap: () {
         if (_markers.length > 2 && latLng == _markers.first.position) {
@@ -1343,7 +1377,7 @@ class _VideoScreenState extends State<VideoScreen> {
     });
   }
 
-
+*/
 
 //area calculation of field
   double _calculateSphericalPolygonArea(List<LatLng> points) {

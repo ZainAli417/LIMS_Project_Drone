@@ -425,6 +425,7 @@ class _VideoScreenState extends State<VideoScreen> {
       }
     }
 
+
     // Generate path from the starting point upwards
     for (double lat = startLat - latIncrement; lat >= minLat; lat -= latIncrement) {
       List<LatLng> intersections = [];

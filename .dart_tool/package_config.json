@@ -458,6 +458,12 @@
       "languageVersion": "3.0"
     },
     {
+      "name": "petitparser",
+      "rootUri": "file:///root/.pub-cache/hosted/pub.dev/petitparser-6.0.2",
+      "packageUri": "lib/",
+      "languageVersion": "3.2"
+    },
+    {
       "name": "plugin_platform_interface",
       "rootUri": "file:///root/.pub-cache/hosted/pub.dev/plugin_platform_interface-2.1.8",
       "packageUri": "lib/",
@@ -608,6 +614,12 @@
       "languageVersion": "2.12"
     },
     {
+      "name": "xml",
+      "rootUri": "file:///root/.pub-cache/hosted/pub.dev/xml-6.5.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.2"
+    },
+    {
       "name": "youtube_player_flutter",
       "rootUri": "file:///root/.pub-cache/hosted/pub.dev/youtube_player_flutter-8.1.2",
       "packageUri": "lib/",
@@ -620,7 +632,7 @@
       "languageVersion": "3.1"
     }
   ],
-  "generated": "2024-07-19T08:05:50.229083Z",
+  "generated": "2024-08-03T08:37:27.900510Z",
   "generator": "pub",
   "generatorVersion": "3.4.4",
   "flutterRoot": "file:///home/kali/Downloads/flutter",

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'ParsingKML.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -36,10 +37,26 @@ class _KMLState extends State<KML> {
     super.initState();
     _requestLocationPermission();
     _initializeFirebaseListener();
+    _loadKMLData(); // Load KML data here
     if (_markers.isNotEmpty) {
       selectedMarker = _markers.first.position;
     }
     _carPosition = LatLng(0, 0); // Initialize with a default value
+  }
+
+  Future<void> _loadKMLData() async {
+    List<LatLng> kmlCoordinates =
+        await KMLParser.parseKML('assets/rawalpindi.kml');
+    setState(() {
+      polygons.add(
+        Polygon(
+          polygonId: PolygonId('kml_polygon'),
+          points: kmlCoordinates,
+          strokeWidth: 2,
+          fillColor: Colors.blue.withOpacity(0.3),
+        ),
+      );
+    });
   }
 
   LatLng _currentPosition = LatLng(0, 0); // Default position
@@ -70,7 +87,8 @@ class _KMLState extends State<KML> {
   Set<Polyline> _polylines = {};
   Set<Polygon> polygons = {};
   List<LatLng> _dronepath = [];
-  late LatLng? selectedMarker = _markers.isNotEmpty ? _markers.first.position : null;
+  late LatLng? selectedMarker =
+      _markers.isNotEmpty ? _markers.first.position : null;
   late GoogleMapController _googleMapController;
   final DatabaseReference _databaseReference = FirebaseDatabase.instance.ref();
   Timer? _movementTimer;
@@ -85,6 +103,7 @@ class _KMLState extends State<KML> {
       print('Error updating value in database: $e');
     }
   }
+
   void _updateValueInDatabaseOnRelease() async {
     try {
       await _databaseReference.child('Direction').set(0);
@@ -92,6 +111,7 @@ class _KMLState extends State<KML> {
       print('Error updating value in database: $e');
     }
   }
+
   void _resetMarkers() async {
     setState(() {
       _markers
@@ -145,6 +165,7 @@ class _KMLState extends State<KML> {
     _currentLocation = await _location.getLocation();
     setState(() {});
   }
+
   void _initializeFirebaseListener() {
     _latRef = FirebaseDatabase.instance.ref().child('Current_Lat');
     _longRef = FirebaseDatabase.instance.ref().child('Current_Long');
@@ -162,19 +183,21 @@ class _KMLState extends State<KML> {
       }
     });
   }
+
   void _updateMarkerPosition(double lat, double long) {
     setState(() {
       _currentPosition = LatLng(lat, long);
     });
   }
-  
+
+  void _hideKeyboard() {
+    FocusScope.of(context).previousFocus();
+  }
+
   @override
   void dispose() {
     _debounce?.cancel();
     super.dispose();
-  }
-  void _hideKeyboard() {
-    FocusScope.of(context).previousFocus();
   }
 
 //UI BUILD
@@ -208,6 +231,7 @@ class _KMLState extends State<KML> {
                 ),
               ),
             ),
+//center
             Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -366,6 +390,7 @@ class _KMLState extends State<KML> {
                 ],
               ),
             ),
+
             Container(
               height: _isFullScreen
                   ? MediaQuery.of(context).size.height * 0.85
@@ -383,46 +408,46 @@ class _KMLState extends State<KML> {
                     _currentLocation == null
                         ? const Center(child: CircularProgressIndicator())
                         : GoogleMap(
-                      initialCameraPosition: CameraPosition(
-                        target: LatLng(
-                          _currentLocation!.latitude!,
-                          _currentLocation!.longitude!,
-                        ),
-                        zoom: 15.0,
-                        //zoom:10.0,
-                      ),
-                      markers: {
-                        ..._markers,
-                        Marker(
-                          markerId: const MarkerId('currentLocation'),
-                          position: _currentPosition,
-                          icon: BitmapDescriptor.defaultMarkerWithHue(
-                              BitmapDescriptor.hueViolet),
-                        ),
-                      },
-                      polylines: _polylines,
-                      polygons: polygons,
-                      zoomGesturesEnabled: true,
-                      rotateGesturesEnabled: true,
-                      buildingsEnabled: true,
-                      scrollGesturesEnabled: true,
-                     // onTap: _onMapTap,
-                      onMapCreated: (controller) {
-                        _googleMapController = controller;
-                      },
-                      gestureRecognizers: <Factory<
-                          OneSequenceGestureRecognizer>>{
-                        Factory<OneSequenceGestureRecognizer>(
-                                () => EagerGestureRecognizer()),
-                      },
-                      myLocationEnabled: true,
-                      myLocationButtonEnabled: true,
-                    ),
+                            initialCameraPosition: CameraPosition(
+                              target: LatLng(
+                                _currentLocation!.latitude!,
+                                _currentLocation!.longitude!,
+                              ),
+                              zoom: 15.0,
+                              //zoom:10.0,
+                            ),
+                            markers: {
+                              ..._markers,
+                              Marker(
+                                markerId: const MarkerId('currentLocation'),
+                                position: _currentPosition,
+                                icon: BitmapDescriptor.defaultMarkerWithHue(
+                                    BitmapDescriptor.hueViolet),
+                              ),
+                            },
+                            polylines: _polylines,
+                            polygons: polygons,
+                            zoomGesturesEnabled: true,
+                            rotateGesturesEnabled: true,
+                            buildingsEnabled: true,
+                            scrollGesturesEnabled: true,
+                            // onTap: _onMapTap,
+                            onMapCreated: (controller) {
+                              _googleMapController = controller;
+                            },
+                            gestureRecognizers: <Factory<
+                                OneSequenceGestureRecognizer>>{
+                              Factory<OneSequenceGestureRecognizer>(
+                                  () => EagerGestureRecognizer()),
+                            },
+                            myLocationEnabled: true,
+                            myLocationButtonEnabled: true,
+                          ),
                     Padding(
                       padding: const EdgeInsets.all(8.0),
                       child: ClipRRect(
                         borderRadius:
-                        BorderRadius.circular(30.0), // Capsule shape
+                            BorderRadius.circular(30.0), // Capsule shape
                         child: Container(
                           decoration: const BoxDecoration(
                             color: Colors.white,
@@ -433,7 +458,7 @@ class _KMLState extends State<KML> {
                               autofocus: false,
                               style: const TextStyle(
                                 fontFamily:
-                                'sans', // Replace with your font family
+                                    'sans', // Replace with your font family
                                 fontSize: 15.0, // Customize font size
                                 color: Colors.black, // Customize text color
                               ),
@@ -448,13 +473,13 @@ class _KMLState extends State<KML> {
                                   color: Colors.teal, // Customize label color
                                 ),
                                 suffixIcon: IconButton(
-                                  icon: Icon(Icons.search,
+                                  icon: const Icon(Icons.search,
                                       color:
-                                      Colors.black), // Customize icon color
+                                          Colors.black), // Customize icon color
                                   onPressed:
-                                  _hideKeyboard, // Hide keyboard on search button press
+                                      _hideKeyboard, // Hide keyboard on search button press
                                 ),
-                                contentPadding: EdgeInsets.symmetric(
+                                contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16.0, vertical: 12.0),
                               ),
                             ),
@@ -463,29 +488,29 @@ class _KMLState extends State<KML> {
                                 return Future.value(<geocoding.Placemark>[]);
                               _debounce?.cancel();
                               final completer =
-                              Completer<List<geocoding.Placemark>>();
+                                  Completer<List<geocoding.Placemark>>();
                               _debounce = Timer(const Duration(microseconds: 1),
-                                      () async {
-                                    List<geocoding.Placemark> placemarks = [];
-                                    try {
-                                      List<geocoding.Location> locations =
+                                  () async {
+                                List<geocoding.Placemark> placemarks = [];
+                                try {
+                                  List<geocoding.Location> locations =
                                       await geocoding
                                           .locationFromAddress(pattern);
-                                      if (locations.isNotEmpty) {
-                                        placemarks = await Future.wait(
-                                          locations.map((location) =>
-                                              geocoding.placemarkFromCoordinates(
-                                                location.latitude,
-                                                location.longitude,
-                                              )),
-                                        ).then((results) =>
-                                            results.expand((x) => x).toList());
-                                      }
-                                    } catch (e) {
-                                      // Handle error if needed
-                                    }
-                                    completer.complete(placemarks);
-                                  });
+                                  if (locations.isNotEmpty) {
+                                    placemarks = await Future.wait(
+                                      locations.map((location) =>
+                                          geocoding.placemarkFromCoordinates(
+                                            location.latitude,
+                                            location.longitude,
+                                          )),
+                                    ).then((results) =>
+                                        results.expand((x) => x).toList());
+                                  }
+                                } catch (e) {
+                                  // Handle error if needed
+                                }
+                                completer.complete(placemarks);
+                              });
                               return completer.future;
                             },
                             itemBuilder:
@@ -493,16 +518,16 @@ class _KMLState extends State<KML> {
                               return ListTile(
                                 leading: const Icon(Icons.location_on,
                                     color:
-                                    Colors.green), // Customize icon color
+                                        Colors.green), // Customize icon color
                                 title: Text(
                                   suggestion.name ??
                                       'No Country/City Available',
                                   style: const TextStyle(
                                     fontFamily:
-                                    'sans', // Replace with your font family
+                                        'sans', // Replace with your font family
                                     fontSize: 16.0,
                                     fontWeight:
-                                    FontWeight.w400, // Customize font size
+                                        FontWeight.w400, // Customize font size
                                     color: Colors.black, // Customize text color
                                   ),
                                 ),
@@ -510,10 +535,10 @@ class _KMLState extends State<KML> {
                                   suggestion.locality ?? 'No locality Exists',
                                   style: const TextStyle(
                                     fontFamily:
-                                    'Arial', // Replace with your font family
+                                        'Arial', // Replace with your font family
                                     fontSize: 14.0, // Customize font size
                                     color:
-                                    Colors.black54, // Customize text color
+                                        Colors.black54, // Customize text color
                                   ),
                                 ),
                               );
@@ -524,8 +549,8 @@ class _KMLState extends State<KML> {
                                   '${suggestion.name ?? ''}, ${suggestion.locality ?? ''}';
                               try {
                                 List<geocoding.Location> locations =
-                                await geocoding
-                                    .locationFromAddress(address);
+                                    await geocoding
+                                        .locationFromAddress(address);
                                 if (locations.isNotEmpty) {
                                   final location = locations.first;
                                   _googleMapController.animateCamera(
@@ -564,26 +589,21 @@ class _KMLState extends State<KML> {
                         },
                       ),
                     ),
-                   
-                 
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.bottomRight,
-              child: ElevatedButton(
-                onPressed: _resetMarkers,
-                child: const Text('Reset Map'),
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.bottomRight,
+                      child: ElevatedButton(
+                        onPressed: _resetMarkers,
+                        child: const Text('Reset Map'),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
         ),
       ),
-            ),
-      ],
-    ),
-    ),
     );
   }
-
-
-
 }

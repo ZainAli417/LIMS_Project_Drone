@@ -159,12 +159,14 @@ class _MyHomePageState extends State<MyHomePage> {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (context) =>KML
-                                        /*
+                                          builder: (context) =>KML(controller: _controller)
+
+                                          /*
                                         MaterialPageRoute(
                                           builder: (context) => VideoScreen(
-                                              controller: _controller),
-                                        ),*/
+                                              controller: _controller),*/
+
+                                        ),
                                       );
                                     },
                                     backgroundColor: Colors.white,

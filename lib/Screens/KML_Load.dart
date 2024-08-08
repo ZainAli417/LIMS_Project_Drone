@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'ParsingKML.dart';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -12,7 +10,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:location/location.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:geocoding/geocoding.dart' as geocoding;
-
+import 'package:xml/xml.dart' as xml;
 enum PathDirection { horizontal, vertical }
 
 class KML extends StatefulWidget {
@@ -44,21 +42,43 @@ class _KMLState extends State<KML> {
     _carPosition = LatLng(0, 0); // Initialize with a default value
   }
 
+  // Method to load KML data
   Future<void> _loadKMLData() async {
-    List<LatLng> kmlCoordinates =
-        await KMLParser.parseKML('assets/rawalpindi.kml');
-    setState(() {
-      polygons.add(
-        Polygon(
-          polygonId: PolygonId('kml_polygon'),
-          points: kmlCoordinates,
-          strokeWidth: 2,
-          fillColor: Colors.blue.withOpacity(0.3),
-        ),
-      );
-    });
-  }
+    try {
+      // Load your KML data from a file or string
+      String kmlData = await DefaultAssetBundle.of(context).loadString('images/rawalpindi.kml');
 
+      final document = xml.XmlDocument.parse(kmlData);
+      final polygonElement = document.findAllElements('Polygon').first;
+      final coordinatesElement = polygonElement.findAllElements('coordinates').first;
+      final coordinatesText = coordinatesElement.text.trim();
+
+      // Split and parse the coordinates
+      final coordinates = coordinatesText.split(' ').map((coordStr) {
+        final coords = coordStr.split(',');
+        return LatLng(double.parse(coords[1]), double.parse(coords[0]));
+      }).toList();
+
+      // Create a polygon
+      final polygon = Polygon(
+        polygonId: const PolygonId('kml_polygon'),
+        points: coordinates,
+        strokeColor: Colors.blue,
+        strokeWidth: 2,
+        fillColor: Colors.transparent,
+      );
+
+      setState(() {
+        polygons.add(polygon);
+      });
+      print('KML Fetched Success');
+
+    } catch (e) {
+      if (kDebugMode) {
+        print("Error parsing KML: $e");
+      }
+    }
+  }
   LatLng _currentPosition = LatLng(0, 0); // Default position
   late DatabaseReference _latRef;
   late DatabaseReference _longRef;

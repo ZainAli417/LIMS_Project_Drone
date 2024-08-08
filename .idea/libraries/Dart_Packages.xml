@@ -534,6 +534,13 @@
             </list>
           </value>
         </entry>
+        <entry key="petitparser">
+          <value>
+            <list>
+              <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/petitparser-6.0.2/lib" />
+            </list>
+          </value>
+        </entry>
         <entry key="plugin_platform_interface">
           <value>
             <list>
@@ -709,6 +716,13 @@
             </list>
           </value>
         </entry>
+        <entry key="xml">
+          <value>
+            <list>
+              <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/xml-6.5.0/lib" />
+            </list>
+          </value>
+        </entry>
         <entry key="youtube_player_flutter">
           <value>
             <list>
@@ -796,6 +810,7 @@
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/meta-1.12.0/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/mgrs_dart-2.0.0/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/path-1.9.0/lib" />
+      <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/petitparser-6.0.2/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/plugin_platform_interface-2.1.8/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/pointer_interceptor-0.9.3+7/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/polylabel-1.0.1/lib" />
@@ -820,6 +835,7 @@
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/vm_service-14.2.1/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/web-0.5.1/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/wkt_parser-2.0.0/lib" />
+      <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/xml-6.5.0/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/youtube_player_flutter-8.1.2/lib" />
     </CLASSES>
     <JAVADOC />

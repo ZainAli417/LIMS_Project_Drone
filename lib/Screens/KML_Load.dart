@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:project_drone/shared_state.dart';
+import 'package:xml/xml.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -24,18 +25,20 @@ class _KMLState extends State<KML> {
   Timer? _debounce;
   final FocusNode _focusNode = FocusNode();
   int drone_direct = 0;
+
   // UP = 3
   // Down = 4
   // Left = 1
   // Right = 2
   // Stop = 0
-
+  static const platform = MethodChannel('flutter.native/helper');
+  final Set<Polygon> _polygons = <Polygon>{};
   @override
   void initState() {
     super.initState();
     _requestLocationPermission();
     _initializeFirebaseListener();
-    _loadKMLData(); // Load KML data here
+    _loadKmlPolygon();
     if (_markers.isNotEmpty) {
       selectedMarker = _markers.first.position;
     }
@@ -43,42 +46,45 @@ class _KMLState extends State<KML> {
   }
 
   // Method to load KML data
-  Future<void> _loadKMLData() async {
+
+  Future<void> _loadKmlPolygon() async {
     try {
-      // Load your KML data from a file or string
-      String kmlData = await DefaultAssetBundle.of(context).loadString('images/rawalpindi.kml');
+      final String kmlData = await platform.invokeMethod('map#addKML');
 
-      final document = xml.XmlDocument.parse(kmlData);
-      final polygonElement = document.findAllElements('Polygon').first;
-      final coordinatesElement = polygonElement.findAllElements('coordinates').first;
-      final coordinatesText = coordinatesElement.text.trim();
+      // Parse the KML data to extract coordinates
+      final document = XmlDocument.parse(kmlData);
+      final List<LatLng> polygonCoords = [];
 
-      // Split and parse the coordinates
-      final coordinates = coordinatesText.split(' ').map((coordStr) {
-        final coords = coordStr.split(',');
-        return LatLng(double.parse(coords[1]), double.parse(coords[0]));
-      }).toList();
+      for (final placemark in document.findAllElements('Placemark')) {
+        final coordinates = placemark.findAllElements('coordinates').map((node) => node.text).join();
+        final List<String> coordinatePairs = coordinates.trim().split(' ');
 
-      // Create a polygon
-      final polygon = Polygon(
-        polygonId: const PolygonId('kml_polygon'),
-        points: coordinates,
-        strokeColor: Colors.blue,
-        strokeWidth: 2,
-        fillColor: Colors.transparent,
-      );
-
-      setState(() {
-        polygons.add(polygon);
-      });
-      print('KML Fetched Success');
-
-    } catch (e) {
-      if (kDebugMode) {
-        print("Error parsing KML: $e");
+        for (final pair in coordinatePairs) {
+          final coords = pair.split(',');
+          if (coords.length >= 2) {
+            final double latitude = double.parse(coords[1]);
+            final double longitude = double.parse(coords[0]);
+            polygonCoords.add(LatLng(latitude, longitude));
+          }
+        }
       }
+
+      // Add the polygon to the map
+      setState(() {
+        _polygons.add(Polygon(
+          polygonId: PolygonId('kml_polygon'),
+          points: polygonCoords,
+          strokeColor: Colors.blue,
+          fillColor: Colors.blue.withOpacity(0.3),
+          strokeWidth: 2,
+        ));
+      });
+    } on PlatformException catch (e) {
+      print("Failed to load KML: '${e.message}'.");
     }
   }
+
+
   LatLng _currentPosition = LatLng(0, 0); // Default position
   late DatabaseReference _latRef;
   late DatabaseReference _longRef;
@@ -108,7 +114,7 @@ class _KMLState extends State<KML> {
   Set<Polygon> polygons = {};
   List<LatLng> _dronepath = [];
   late LatLng? selectedMarker =
-      _markers.isNotEmpty ? _markers.first.position : null;
+  _markers.isNotEmpty ? _markers.first.position : null;
   late GoogleMapController _googleMapController;
   final DatabaseReference _databaseReference = FirebaseDatabase.instance.ref();
   Timer? _movementTimer;
@@ -413,7 +419,10 @@ class _KMLState extends State<KML> {
 
             Container(
               height: _isFullScreen
-                  ? MediaQuery.of(context).size.height * 0.85
+                  ? MediaQuery
+                  .of(context)
+                  .size
+                  .height * 0.85
                   : 400,
               width: double.infinity,
               decoration: BoxDecoration(
@@ -428,46 +437,46 @@ class _KMLState extends State<KML> {
                     _currentLocation == null
                         ? const Center(child: CircularProgressIndicator())
                         : GoogleMap(
-                            initialCameraPosition: CameraPosition(
-                              target: LatLng(
-                                _currentLocation!.latitude!,
-                                _currentLocation!.longitude!,
-                              ),
-                              zoom: 15.0,
-                              //zoom:10.0,
-                            ),
-                            markers: {
-                              ..._markers,
-                              Marker(
-                                markerId: const MarkerId('currentLocation'),
-                                position: _currentPosition,
-                                icon: BitmapDescriptor.defaultMarkerWithHue(
-                                    BitmapDescriptor.hueViolet),
-                              ),
-                            },
-                            polylines: _polylines,
-                            polygons: polygons,
-                            zoomGesturesEnabled: true,
-                            rotateGesturesEnabled: true,
-                            buildingsEnabled: true,
-                            scrollGesturesEnabled: true,
-                            // onTap: _onMapTap,
-                            onMapCreated: (controller) {
-                              _googleMapController = controller;
-                            },
-                            gestureRecognizers: <Factory<
-                                OneSequenceGestureRecognizer>>{
-                              Factory<OneSequenceGestureRecognizer>(
-                                  () => EagerGestureRecognizer()),
-                            },
-                            myLocationEnabled: true,
-                            myLocationButtonEnabled: true,
-                          ),
+                      initialCameraPosition: CameraPosition(
+                        target: LatLng(
+                          _currentLocation!.latitude!,
+                          _currentLocation!.longitude!,
+                        ),
+                        zoom: 15.0,
+                        //zoom:10.0,
+                      ),
+                      markers: {
+                        ..._markers,
+                        Marker(
+                          markerId: const MarkerId('currentLocation'),
+                          position: _currentPosition,
+                          icon: BitmapDescriptor.defaultMarkerWithHue(
+                              BitmapDescriptor.hueViolet),
+                        ),
+                      },
+                      polylines: _polylines,
+                      zoomGesturesEnabled: true,
+                      rotateGesturesEnabled: true,
+                      buildingsEnabled: true,
+                      scrollGesturesEnabled: true,
+                      // onTap: _onMapTap,
+                      onMapCreated: (controller) {
+                        _googleMapController = controller;
+                      },
+                      polygons: _polygons,
+                      gestureRecognizers: <Factory<
+                          OneSequenceGestureRecognizer>>{
+                        Factory<OneSequenceGestureRecognizer>(
+                                () => EagerGestureRecognizer()),
+                      },
+                      myLocationEnabled: true,
+                      myLocationButtonEnabled: true,
+                    ),
                     Padding(
                       padding: const EdgeInsets.all(8.0),
                       child: ClipRRect(
                         borderRadius:
-                            BorderRadius.circular(30.0), // Capsule shape
+                        BorderRadius.circular(30.0), // Capsule shape
                         child: Container(
                           decoration: const BoxDecoration(
                             color: Colors.white,
@@ -478,7 +487,7 @@ class _KMLState extends State<KML> {
                               autofocus: false,
                               style: const TextStyle(
                                 fontFamily:
-                                    'sans', // Replace with your font family
+                                'sans', // Replace with your font family
                                 fontSize: 15.0, // Customize font size
                                 color: Colors.black, // Customize text color
                               ),
@@ -495,9 +504,9 @@ class _KMLState extends State<KML> {
                                 suffixIcon: IconButton(
                                   icon: const Icon(Icons.search,
                                       color:
-                                          Colors.black), // Customize icon color
+                                      Colors.black), // Customize icon color
                                   onPressed:
-                                      _hideKeyboard, // Hide keyboard on search button press
+                                  _hideKeyboard, // Hide keyboard on search button press
                                 ),
                                 contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16.0, vertical: 12.0),
@@ -508,29 +517,30 @@ class _KMLState extends State<KML> {
                                 return Future.value(<geocoding.Placemark>[]);
                               _debounce?.cancel();
                               final completer =
-                                  Completer<List<geocoding.Placemark>>();
+                              Completer<List<geocoding.Placemark>>();
                               _debounce = Timer(const Duration(microseconds: 1),
-                                  () async {
-                                List<geocoding.Placemark> placemarks = [];
-                                try {
-                                  List<geocoding.Location> locations =
+                                      () async {
+                                    List<geocoding.Placemark> placemarks = [];
+                                    try {
+                                      List<geocoding.Location> locations =
                                       await geocoding
                                           .locationFromAddress(pattern);
-                                  if (locations.isNotEmpty) {
-                                    placemarks = await Future.wait(
-                                      locations.map((location) =>
-                                          geocoding.placemarkFromCoordinates(
-                                            location.latitude,
-                                            location.longitude,
-                                          )),
-                                    ).then((results) =>
-                                        results.expand((x) => x).toList());
-                                  }
-                                } catch (e) {
-                                  // Handle error if needed
-                                }
-                                completer.complete(placemarks);
-                              });
+                                      if (locations.isNotEmpty) {
+                                        placemarks = await Future.wait(
+                                          locations.map((location) =>
+                                              geocoding
+                                                  .placemarkFromCoordinates(
+                                                location.latitude,
+                                                location.longitude,
+                                              )),
+                                        ).then((results) =>
+                                            results.expand((x) => x).toList());
+                                      }
+                                    } catch (e) {
+                                      // Handle error if needed
+                                    }
+                                    completer.complete(placemarks);
+                                  });
                               return completer.future;
                             },
                             itemBuilder:
@@ -538,16 +548,16 @@ class _KMLState extends State<KML> {
                               return ListTile(
                                 leading: const Icon(Icons.location_on,
                                     color:
-                                        Colors.green), // Customize icon color
+                                    Colors.green), // Customize icon color
                                 title: Text(
                                   suggestion.name ??
                                       'No Country/City Available',
                                   style: const TextStyle(
                                     fontFamily:
-                                        'sans', // Replace with your font family
+                                    'sans', // Replace with your font family
                                     fontSize: 16.0,
                                     fontWeight:
-                                        FontWeight.w400, // Customize font size
+                                    FontWeight.w400, // Customize font size
                                     color: Colors.black, // Customize text color
                                   ),
                                 ),
@@ -555,10 +565,10 @@ class _KMLState extends State<KML> {
                                   suggestion.locality ?? 'No locality Exists',
                                   style: const TextStyle(
                                     fontFamily:
-                                        'Arial', // Replace with your font family
+                                    'Arial', // Replace with your font family
                                     fontSize: 14.0, // Customize font size
                                     color:
-                                        Colors.black54, // Customize text color
+                                    Colors.black54, // Customize text color
                                   ),
                                 ),
                               );
@@ -566,11 +576,12 @@ class _KMLState extends State<KML> {
                             onSuggestionSelected:
                                 (geocoding.Placemark suggestion) async {
                               final address =
-                                  '${suggestion.name ?? ''}, ${suggestion.locality ?? ''}';
+                                  '${suggestion.name ?? ''}, ${suggestion
+                                  .locality ?? ''}';
                               try {
                                 List<geocoding.Location> locations =
-                                    await geocoding
-                                        .locationFromAddress(address);
+                                await geocoding
+                                    .locationFromAddress(address);
                                 if (locations.isNotEmpty) {
                                   final location = locations.first;
                                   _googleMapController.animateCamera(

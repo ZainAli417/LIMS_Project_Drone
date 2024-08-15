@@ -31,7 +31,6 @@ dependencies:
   flutter_joystick: ^0.0.4
   location: ^6.0.2
   xml: ^6.1.0
-
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -42,4 +41,5 @@ flutter:
 
   assets:
     - images/
+    - images/sample.txt
 

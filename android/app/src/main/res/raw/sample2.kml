@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kmlxmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Islamabad, Pakistan</name>
+    <Style id="transBluePoly">
+      <LineStyle>
+        <color>7f00ffff</color>
+        <width>1.5</width>
+      </LineStyle>
+      <PolyStyle>
+        <color>7f00ffff</color>
+      </PolyStyle>
+    </Style>
+    <Placemark>
+      <name>Islamabad, Pakistan</name>
+      <styleUrl>#transBluePoly</styleUrl>
+      <Polygon>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>
+              73.0479,33.6844,0
+              73.0479,33.7444,0
+              73.1479,33.7444,0
+              73.1479,33.6844,0
+              73.0479,33.6844,0
+            </coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+  </Document>
+</kml>

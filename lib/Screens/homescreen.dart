@@ -1,6 +1,6 @@
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
-import 'package:project_drone/Screens/KML_Load.dart';
+import 'package:project_drone/Screens/Fetch_Input.dart';
 import 'package:toggle_switch/toggle_switch.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -159,7 +159,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (context) =>KML(controller: _controller)
+                                          builder: (context) =>Fetch_Input(controller: _controller)
 
                                           /*
                                         MaterialPageRoute(

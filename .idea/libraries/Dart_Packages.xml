@@ -163,6 +163,13 @@
             </list>
           </value>
         </entry>
+        <entry key="flutter_asset_manager">
+          <value>
+            <list>
+              <option value="$USER_HOME$/.pub-cache/hosted/pub.dev/flutter_asset_manager-0.0.2/lib" />
+            </list>
+          </value>
+        </entry>
         <entry key="flutter_inappwebview">
           <value>
             <list>
@@ -759,6 +766,7 @@
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/firebase_database-10.5.4/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/firebase_database_platform_interface-0.2.5+32/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/firebase_database_web-0.2.5+4/lib" />
+      <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/flutter_asset_manager-0.0.2/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/flutter_inappwebview-5.8.0/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/flutter_joystick-0.0.4/lib" />
       <root url="file://$USER_HOME$/.pub-cache/hosted/pub.dev/flutter_keyboard_visibility-5.4.1/lib" />

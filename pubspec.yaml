@@ -31,6 +31,7 @@ dependencies:
   flutter_joystick: ^0.0.4
   location: ^6.0.2
   xml: ^6.1.0
+  flutter_asset_manager: ^0.0.2
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -40,6 +41,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    - images/
-    - images/sample.txt
+    - images/Islamabad.txt
+    - images/Jinnah_Hall.txt
+    - images/rawalpindi.txt
 

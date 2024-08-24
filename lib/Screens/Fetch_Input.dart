@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
@@ -15,6 +16,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:geocoding/geocoding.dart' as geocoding;
 import 'package:latlong2/latlong.dart' as latlong;
+import 'package:flutter_asset_manager/flutter_asset_manager.dart';
 
 enum PathDirection { horizontal, vertical }
 
@@ -38,6 +40,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showInputSelectionPopup();
+    });
     _requestLocationPermission();
     _initializeFirebaseListener();
     if (_markers.isNotEmpty) {
@@ -45,6 +50,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     _carPosition = LatLng(0, 0); // Initialize with a default value
   }
+
 
   LatLng _currentPosition = LatLng(0, 0); // Default position
   late DatabaseReference _latRef;
@@ -78,7 +84,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
   late GoogleMapController _googleMapController;
   final DatabaseReference _databaseReference = FirebaseDatabase.instance.ref();
   Timer? _movementTimer;
-
+  bool _isCustomMode = false;
   double _remainingDistanceKM_TotalPath = 0.0;
   List<LatLng> polygonPoints = [];
   double pathWidth = 10.0;
@@ -624,7 +630,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                     items: _markers.sublist(0, _markers.length - 1).map((marker) {
                       return DropdownMenuItem<LatLng>(
                         value: marker.position,
-                        child: Text('${marker.markerId.value}'),
+                        child: Text(marker.markerId.value),
                       );
                     }).toList(),
                     onChanged: (LatLng? newValue) {
@@ -988,11 +994,12 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       buildingsEnabled: true,
                       scrollGesturesEnabled: true,
                       // Remove the onTap since we are not using it anymore
-                      // onTap: _onMapTap,
+                      onTap: _isCustomMode ? _onMapTap : null,
                       onMapCreated: (controller) {
                         _googleMapController = controller;
-                        _loadMarkersFromFile(); // Load markers from file when the map is created
+
                       },
+
                       gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
                         Factory<OneSequenceGestureRecognizer>(
                                 () => EagerGestureRecognizer()),
@@ -1031,13 +1038,13 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                   color: Colors.teal, // Customize label color
                                 ),
                                 suffixIcon: IconButton(
-                                  icon: Icon(Icons.search,
+                                  icon: const Icon(Icons.search,
                                       color:
                                       Colors.black), // Customize icon color
                                   onPressed:
                                   _hideKeyboard, // Hide keyboard on search button press
                                 ),
-                                contentPadding: EdgeInsets.symmetric(
+                                contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16.0, vertical: 12.0),
                               ),
                             ),
@@ -1111,7 +1118,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                     .locationFromAddress(address);
                                 if (locations.isNotEmpty) {
                                   final location = locations.first;
-                                  _googleMapController?.animateCamera(
+                                  _googleMapController.animateCamera(
                                     CameraUpdate.newCameraPosition(
                                       CameraPosition(
                                         target: LatLng(location.latitude,
@@ -1300,13 +1307,114 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
   }
 
+  void _showInputSelectionPopup() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Select Coordinate Method'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  setState(() {
+                    _isCustomMode = true;
+                  });
+                },
+                child: const Text('Manual Placing'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _showFileSelectionPopup();
+                },
+                child: const Text('Load From File'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
+  Future<List<String>> _getAssetFiles() async {
+    // Load the AssetManifest file
+    final manifestContent = await rootBundle.loadString('AssetManifest.json');
 
+    // Decode the JSON into a Map<String, dynamic>
+    final Map<String, dynamic> manifestMap = json.decode(manifestContent);
 
+    // Filter the manifest for .txt files in the 'images/' directory
+    final txtFiles = manifestMap.keys
+        .where((String key) => key.startsWith('images/') && key.endsWith('.txt'))
+        .toList();
 
-  // New method to read markers from a .txt file
-  Future<void> _loadMarkersFromFile() async {
-    final contents = await rootBundle.loadString('images/sample.txt');
+    return txtFiles;
+  }
+
+  Future<void> _showFileSelectionPopup() async {
+    List<String> files = await _getAssetFiles(); // Get list of files
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Select a File'),
+          content: Container(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: files.length,
+                    itemBuilder: (context, index) {
+                      return ListTile(
+                        title: Text(files[index]),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _loadMarkersFromFile(files[index]);
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+  }
+
+  void _onMapTap(LatLng latLng) {
+    final markerId = MarkerId('M${_markers.length + 1}');
+    final newMarker = Marker(
+      markerId: markerId,
+      position: latLng,
+      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+      onTap: () {
+        if (_markers.length > 2 && latLng == _markers.first.position) {
+          Selecting_Path_Direction_and_Turn();
+        }
+      },
+    );
+
+    setState(() {
+      _markers.add(newMarker);
+      _markerPositions.add(latLng);
+      if (_markers.length > 1) {
+        _updatePolylines();
+        _updateRouteData();
+      }
+    });
+  }
+
+  Future<void> _loadMarkersFromFile(String fileName) async {
+    final contents = await rootBundle.loadString(fileName);
 
     _markers.clear();
     _markerPositions.clear();
@@ -1314,7 +1422,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     final lines = contents.split('\n');
     for (var line in lines) {
       final parts = line.split(',');
-      if (parts.length == 2) {
+      if (parts.length >= 2) {
         final lat = double.parse(parts[0].trim());
         final lng = double.parse(parts[1].trim());
         final latLng = LatLng(lat, lng);
@@ -1331,75 +1439,15 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     }
 
-
-
     setState(() {
-        _updatePolylines();
-        _updateRouteData();
-        Selecting_Path_Direction_and_Turn(); // Call the function if the shape is closed
-
-
+      _updatePolylines();
+      _updateRouteData();
+      Selecting_Path_Direction_and_Turn(); // Call the function if the shape is closed
     });
   }
 
 
-  /*
-  void _onMapTap(LatLng latLng) {
-    final markerId = MarkerId('M${_markers.length + 1}');
-    final newMarker = Marker(
-      markerId: markerId,
-      position: latLng,
-      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
 
-      onTap: () {
-        if (_markers.length > 2 && latLng == _markers.first.position) {
-          _initializeAndShowInfoWindows();
-          Selecting_Path_Direction_and_Turn();
-        }
-      },
-    );
-
-    setState(() {
-      _markers.add(newMarker);
-      _markerPositions.add(latLng);
-      if (_markers.length > 1) {
-        _updatePolylines();
-        _updateRouteData();
-      }
-    });
-
-  }
-// Function to initialize all markers with labels and show InfoWindows
-  void _initializeAndShowInfoWindows() {
-    List<Marker> updatedMarkers = [];
-    for (int i = 0; i < _markerPositions.length; i++) {
-      final markerId = MarkerId('M${i + 1}');
-      final markerLabel = 'M${i + 1}';
-      final updatedMarker = Marker(
-        markerId: markerId,
-        position: _markerPositions[i],
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-
-        infoWindow: InfoWindow(
-          title: markerLabel,
-        ),
-      );
-
-      updatedMarkers.add(updatedMarker);
-    }
-
-    setState(() {
-      _markers = updatedMarkers;
-    });
-
-    Future.delayed(Duration(milliseconds: 1000), ()  {
-      for (var marker in _markers) {
-        _googleMapController.showMarkerInfoWindow(marker.markerId);
-      }
-    });
-  }
-
-*/
 
 //area calculation of field
   double _calculateSphericalPolygonArea(List<LatLng> points) {
@@ -1442,31 +1490,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     return areaInAcres;
   }
-/* DEFAULT APPROCH double _calculateSphericalPolygonArea(List<LatLng> points) {
-    const double radiusOfEarth = 6378137.0; // Earth's radius in meters
-    double total = 0.0;
-    int numPoints = points.length;
-
-    for (int i = 0; i < numPoints; i++) {
-      LatLng p1 = points[i];
-      LatLng p2 = points[(i + 1) % numPoints];
-
-      double lat1 = p1.latitude * pi / 180.0;
-      double lon1 = p1.longitude * pi / 180.0;
-      double lat2 = p2.latitude * pi / 180.0;
-      double lon2 = p2.longitude * pi / 180.0;
-
-      total += (lon2 - lon1) * (2 + sin(lat1) + sin(lat2));
-    }
-
-    total = total.abs() * radiusOfEarth * radiusOfEarth / 2.0;
-
-    // Convert area to acres
-    double areaInSquareMeters = total;
-    double areaInAcres = areaInSquareMeters * 0.000247105;
-
-    return areaInAcres;
-  }*/
 //below stripping the triagle emthod to find area was used but unseccesfull results
 /*
   double _calculateSphericalPolygonArea(List<LatLng> points) {
@@ -1527,4 +1550,87 @@ class _Fetch_InputState extends State<Fetch_Input> {
     double triangleArea = sphericalExcess * radiusOfEarth * radiusOfEarth;
     return triangleArea;
   }*/
+/*
+  void _onMapTap(LatLng latLng) {
+    final markerId = MarkerId('M${_markers.length + 1}');
+    final newMarker = Marker(
+      markerId: markerId,
+      position: latLng,
+      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+
+      onTap: () {
+        if (_markers.length > 2 && latLng == _markers.first.position) {
+          _initializeAndShowInfoWindows();
+          Selecting_Path_Direction_and_Turn();
+        }
+      },
+    );
+
+    setState(() {
+      _markers.add(newMarker);
+      _markerPositions.add(latLng);
+      if (_markers.length > 1) {
+        _updatePolylines();
+        _updateRouteData();
+      }
+    });
+
+  }
+// Function to initialize all markers with labels and show InfoWindows
+  void _initializeAndShowInfoWindows() {
+    List<Marker> updatedMarkers = [];
+    for (int i = 0; i < _markerPositions.length; i++) {
+      final markerId = MarkerId('M${i + 1}');
+      final markerLabel = 'M${i + 1}';
+      final updatedMarker = Marker(
+        markerId: markerId,
+        position: _markerPositions[i],
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+
+        infoWindow: InfoWindow(
+          title: markerLabel,
+        ),
+      );
+
+      updatedMarkers.add(updatedMarker);
+    }
+
+    setState(() {
+      _markers = updatedMarkers;
+    });
+
+    Future.delayed(Duration(milliseconds: 1000), ()  {
+      for (var marker in _markers) {
+        _googleMapController.showMarkerInfoWindow(marker.markerId);
+      }
+    });
+  }
+
+*/
+/* DEFAULT APPROCH double _calculateSphericalPolygonArea(List<LatLng> points) {
+    const double radiusOfEarth = 6378137.0; // Earth's radius in meters
+    double total = 0.0;
+    int numPoints = points.length;
+
+    for (int i = 0; i < numPoints; i++) {
+      LatLng p1 = points[i];
+      LatLng p2 = points[(i + 1) % numPoints];
+
+      double lat1 = p1.latitude * pi / 180.0;
+      double lon1 = p1.longitude * pi / 180.0;
+      double lat2 = p2.latitude * pi / 180.0;
+      double lon2 = p2.longitude * pi / 180.0;
+
+      total += (lon2 - lon1) * (2 + sin(lat1) + sin(lat2));
+    }
+
+    total = total.abs() * radiusOfEarth * radiusOfEarth / 2.0;
+
+    // Convert area to acres
+    double areaInSquareMeters = total;
+    double areaInAcres = areaInSquareMeters * 0.000247105;
+
+    return areaInAcres;
+  }*/
+
 }

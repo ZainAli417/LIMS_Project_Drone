@@ -627,7 +627,10 @@ class _Fetch_InputState extends State<Fetch_Input> {
                   DropdownButton<LatLng>(
                     value: selectedMarker,
                     isExpanded: true,
-                    items: _markers.sublist(0, _markers.length - 1).map((marker) {
+                    items: (_isCustomMode
+                        ? _markers.sublist(0, _markers.length)
+                        : _markers.sublist(0, _markers.length - 1))
+                        .map((marker) {
                       return DropdownMenuItem<LatLng>(
                         value: marker.position,
                         child: Text(marker.markerId.value),

@@ -974,6 +974,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                     _currentLocation == null
                         ? const Center(child: CircularProgressIndicator())
                         : GoogleMap(
+
+
                       initialCameraPosition: CameraPosition(
                         target: LatLng(
                           _currentLocation!.latitude!,
@@ -981,6 +983,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         ),
                         zoom: 15.0,
                       ),
+
+
+
                       markers: {
                         ..._markers,
                         Marker(

@@ -940,7 +940,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               setState(() {
                                 _isDownPressed = false;
                                 drone_direct = 0;
-                              });
+                              }
+                              );
                               _updateValueInDatabaseOnRelease();
                             },
                             child: Image.asset(
@@ -983,6 +984,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         ),
                         zoom: 15.0,
                       ),
+
+
 
 
 

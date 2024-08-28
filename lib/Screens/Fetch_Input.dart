@@ -51,7 +51,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     _carPosition = LatLng(0, 0); // Initialize with a default value
   }
 
-
   LatLng _currentPosition = LatLng(0, 0); // Default position
   late DatabaseReference _latRef;
   late DatabaseReference _longRef;
@@ -80,7 +79,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
   Set<Polyline> _polylines = {};
   Set<Polygon> polygons = {};
   List<LatLng> _dronepath = [];
-  late LatLng? selectedMarker = _markers.isNotEmpty ? _markers.first.position : null;
+  late LatLng? selectedMarker =
+      _markers.isNotEmpty ? _markers.first.position : null;
   late GoogleMapController _googleMapController;
   final DatabaseReference _databaseReference = FirebaseDatabase.instance.ref();
   Timer? _movementTimer;
@@ -96,6 +96,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error updating value in database: $e');
     }
   }
+
   void _updateValueInDatabaseOnRelease() async {
     try {
       await _databaseReference.child('Direction').set(0);
@@ -103,6 +104,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error updating value in database: $e');
     }
   }
+
   void _resetMarkers() async {
     setState(() {
       _markers
@@ -135,6 +137,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error resetting data in database: $e');
     }
   }
+
   double calculate_selcted_segemnt_distance(List<LatLng> path) {
     double totalDistance = 0.0;
     for (int i = 0; i < path.length - 1; i++) {
@@ -144,11 +147,13 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     return totalDistance;
   } // Return distance in kilometers
+
   LatLng _lerpLatLng(LatLng a, LatLng b, double t) {
     double lat = a.latitude + (b.latitude - a.latitude) * t;
     double lng = a.longitude + (b.longitude - a.longitude) * t;
     return LatLng(lat, lng);
   }
+
   void _storeTimeDurationInDatabase(double totalDistanceInKM) {
     try {
       const double speed = 10; // Speed in meters per second
@@ -162,6 +167,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error storing time duration in database: $e');
     }
   }
+
   void _storeTimeLeftInDatabase(double remainingDistanceKM_SelectedPath) async {
     try {
       const double speed = 10; // Speed in meters per second
@@ -175,6 +181,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error storing time duration in database: $e');
     }
   }
+
   double calculateonelinedistance(LatLng start, LatLng end) {
     const R = 6371; // Radius of the Earth in kilometers
     double lat1 = start.latitude * pi / 180;
@@ -188,6 +195,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     double c = 2 * atan2(sqrt(a), sqrt(1 - a));
     return R * c; // Distance in kilometers
   }
+
   double _calculateTotalDistanceZIGAG(List<LatLng> path) {
     double totalzigzagdis = 0.0;
     for (int i = 0; i < path.length - 1; i++) {
@@ -195,6 +203,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     return totalzigzagdis;
   } // Return distance in kilometers
+
   void _startMovement(List<LatLng> path) {
     if (path.isEmpty) {
       print("Path is empty, cannot start movement");
@@ -221,7 +230,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
         double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
         segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
         double segmentProgress =
-        (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+            (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
         _carPosition = _lerpLatLng(start, end, segmentProgress);
         bool isSelectedSegment = _isSegmentSelected(path, _currentPointIndex);
         distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
@@ -251,7 +260,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
         });
         setState(() {
           _markers.removeWhere(
-                  (marker) => marker.markerId == const MarkerId('car'));
+              (marker) => marker.markerId == const MarkerId('car'));
           _addCarMarker(isSelectedSegment);
           if (segmentProgress >= 1.0) {
             _currentPointIndex++;
@@ -271,6 +280,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     });
   }
+
   void _onPathComplete() {
     // Clear all paths and stop movement
     setState(() {
@@ -280,6 +290,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
           .removeWhere((marker) => marker.markerId == const MarkerId('car'));
     });
   }
+
   Future<void> _addCarMarker(bool isSelectedSegment) async {
     setState(() {
       _markers.add(Marker(
@@ -291,6 +302,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       ));
     });
   }
+
   void _showRoutesDialog() {
     List<int> selectedSegments = [];
     showDialog(
@@ -335,7 +347,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                             setState(() {
                               selectedSegments = List.generate(
                                 (_dronepath.length - 1) ~/ 2,
-                                    (i) => i,
+                                (i) => i,
                               );
                             });
                           },
@@ -355,7 +367,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               );
                               selectedPaths.add(segment);
                               double segmentDistance =
-                              calculate_selcted_segemnt_distance(segment);
+                                  calculate_selcted_segemnt_distance(segment);
                               totalDistance += segmentDistance;
                             }
                             _totalDistanceKM =
@@ -387,10 +399,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
     );
   }
 
-
-
-
-  void dronepath_Horizontal(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
+  void dronepath_Horizontal(
+      List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
 
     List<LatLng> sortedPoints = List.from(polygon);
@@ -432,9 +442,10 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     }
 
-
     // Generate path from the starting point upwards
-    for (double lat = startLat - latIncrement; lat >= minLat; lat -= latIncrement) {
+    for (double lat = startLat - latIncrement;
+        lat >= minLat;
+        lat -= latIncrement) {
       List<LatLng> intersections = [];
       for (int i = 0; i < polygon.length; i++) {
         LatLng p1 = polygon[i];
@@ -476,9 +487,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
     });
   }
 
-
-
-  void dronepath_Vertical(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
+  void dronepath_Vertical(
+      List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
 
     List<LatLng> sortedPoints = List.from(polygon);
@@ -521,7 +531,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
 
     // Generate path from the starting point to the left
-    for (double lng = startLng - lngIncrement; lng >= minLng; lng -= lngIncrement) {
+    for (double lng = startLng - lngIncrement;
+        lng >= minLng;
+        lng -= lngIncrement) {
       List<LatLng> intersections = [];
       for (int i = 0; i < polygon.length; i++) {
         LatLng p1 = polygon[i];
@@ -563,20 +575,12 @@ class _Fetch_InputState extends State<Fetch_Input> {
     });
   }
 
-
-
-
-
-
-
-
 // Extracting LatLng points from markers
   void extractLatLngPoints() {
     if (polygons.isNotEmpty) {
       polygonPoints = polygons.first.points.toList();
     }
   }
-
 
 // Dialog for selecting path direction and starting point
   void Selecting_Path_Direction_and_Turn() {
@@ -587,7 +591,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setState) {
             return AlertDialog(
-              title: const Text('Enter Turn Length (meters) default is 10 meters'),
+              title:
+                  const Text('Enter Turn Length (meters) default is 10 meters'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -628,8 +633,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                     value: selectedMarker,
                     isExpanded: true,
                     items: (_isCustomMode
-                        ? _markers.sublist(0, _markers.length)
-                        : _markers.sublist(0, _markers.length - 1))
+                            ? _markers.sublist(0, _markers.length)
+                            : _markers.sublist(0, _markers.length - 1))
                         .map((marker) {
                       return DropdownMenuItem<LatLng>(
                         value: marker.position,
@@ -642,7 +647,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       });
                     },
                   )
-
                 ],
               ),
               actions: <Widget>[
@@ -651,9 +655,11 @@ class _Fetch_InputState extends State<Fetch_Input> {
                     Navigator.of(context).pop();
                     extractLatLngPoints();
                     if (_selectedDirection == PathDirection.vertical) {
-                      dronepath_Vertical(polygonPoints, pathWidth, selectedMarker!);
+                      dronepath_Vertical(
+                          polygonPoints, pathWidth, selectedMarker!);
                     } else {
-                      dronepath_Horizontal(polygonPoints, pathWidth, selectedMarker!);
+                      dronepath_Horizontal(
+                          polygonPoints, pathWidth, selectedMarker!);
                     }
                     _closePolygon(turnLength);
                   },
@@ -707,6 +713,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     return false;
   }
+
   bool _isSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
     if (segment1.length != segment2.length) {
       return false;
@@ -718,6 +725,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     return true;
   }
+
   Future<void> _requestLocationPermission() async {
     bool _serviceEnabled;
     PermissionStatus _permissionGranted;
@@ -738,6 +746,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     _currentLocation = await _location.getLocation();
     setState(() {});
   }
+
   void _initializeFirebaseListener() {
     _latRef = FirebaseDatabase.instance.ref().child('Current_Lat');
     _longRef = FirebaseDatabase.instance.ref().child('Current_Long');
@@ -755,19 +764,23 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     });
   }
+
   void _updateMarkerPosition(double lat, double long) {
     setState(() {
       _currentPosition = LatLng(lat, long);
     });
   }
+
   @override
   void dispose() {
     _debounce?.cancel();
     super.dispose();
   }
+
   void _hideKeyboard() {
     FocusScope.of(context).previousFocus();
   }
+
 //UI BUILD
   @override
   Widget build(BuildContext context) {
@@ -940,8 +953,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               setState(() {
                                 _isDownPressed = false;
                                 drone_direct = 0;
-                              }
-                              );
+                              });
                               _updateValueInDatabaseOnRelease();
                             },
                             child: Image.asset(
@@ -975,55 +987,52 @@ class _Fetch_InputState extends State<Fetch_Input> {
                     _currentLocation == null
                         ? const Center(child: CircularProgressIndicator())
                         : GoogleMap(
-
-
-                      initialCameraPosition: CameraPosition(
-                        target: LatLng(
-                          _currentLocation!.latitude!,
-                          _currentLocation!.longitude!,
-                        ),
-                        zoom: 15.0,
-                      ),
-
-
-
-
-
-                      markers: {
-                        ..._markers,
-                        Marker(
-                          markerId: const MarkerId('currentLocation'),
-                          position: _currentPosition,
-                          icon: BitmapDescriptor.defaultMarkerWithHue(
-                              BitmapDescriptor.hueViolet),
-                        ),
-                      },
-                      polylines: _polylines,
-                      polygons: polygons,
-                      zoomGesturesEnabled: true,
-                      rotateGesturesEnabled: true,
-                      buildingsEnabled: true,
-                      scrollGesturesEnabled: true,
-                      // Remove the onTap since we are not using it anymore
-                      onTap: _isCustomMode ? _onMapTap : null,
-                      onMapCreated: (controller) {
-                        _googleMapController = controller;
-
-                      },
-
-                      gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-                        Factory<OneSequenceGestureRecognizer>(
-                                () => EagerGestureRecognizer()),
-                      },
-                      myLocationEnabled: true,
-                      myLocationButtonEnabled: true,
-                    ),
-
+                            initialCameraPosition: _isCustomMode == false &&
+                                    _markerPositions.isNotEmpty
+                                ? CameraPosition(
+                                    target: _markerPositions
+                                        .first, // First LatLng from file
+                                    zoom: 50.0,
+                                  )
+                                : CameraPosition(
+                                    target: LatLng(
+                                      _currentLocation!.latitude!,
+                                      _currentLocation!.longitude!,
+                                    ),
+                                    zoom: 15.0,
+                                  ),
+                            markers: {
+                              ..._markers,
+                              Marker(
+                                markerId: const MarkerId('currentLocation'),
+                                position: _currentPosition,
+                                icon: BitmapDescriptor.defaultMarkerWithHue(
+                                    BitmapDescriptor.hueViolet),
+                              ),
+                            },
+                            polylines: _polylines,
+                            polygons: polygons,
+                            zoomGesturesEnabled: true,
+                            rotateGesturesEnabled: true,
+                            buildingsEnabled: true,
+                            scrollGesturesEnabled: true,
+                            onTap: _isCustomMode ? _onMapTap : null,
+                            onMapCreated: (controller) {
+                              _googleMapController = controller;
+                            },
+                            gestureRecognizers: <Factory<
+                                OneSequenceGestureRecognizer>>{
+                              Factory<OneSequenceGestureRecognizer>(
+                                  () => EagerGestureRecognizer()),
+                            },
+                            myLocationEnabled: true,
+                            myLocationButtonEnabled: true,
+                          ),
                     Padding(
                       padding: const EdgeInsets.all(8.0),
                       child: ClipRRect(
                         borderRadius:
-                        BorderRadius.circular(30.0), // Capsule shape
+                            BorderRadius.circular(30.0), // Capsule shape
                         child: Container(
                           decoration: const BoxDecoration(
                             color: Colors.white,
@@ -1034,7 +1043,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               autofocus: false,
                               style: const TextStyle(
                                 fontFamily:
-                                'sans', // Replace with your font family
+                                    'sans', // Replace with your font family
                                 fontSize: 15.0, // Customize font size
                                 color: Colors.black, // Customize text color
                               ),
@@ -1051,9 +1060,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 suffixIcon: IconButton(
                                   icon: const Icon(Icons.search,
                                       color:
-                                      Colors.black), // Customize icon color
+                                          Colors.black), // Customize icon color
                                   onPressed:
-                                  _hideKeyboard, // Hide keyboard on search button press
+                                      _hideKeyboard, // Hide keyboard on search button press
                                 ),
                                 contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16.0, vertical: 12.0),
@@ -1064,29 +1073,29 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 return Future.value(<geocoding.Placemark>[]);
                               _debounce?.cancel();
                               final completer =
-                              Completer<List<geocoding.Placemark>>();
+                                  Completer<List<geocoding.Placemark>>();
                               _debounce = Timer(const Duration(microseconds: 1),
-                                      () async {
-                                    List<geocoding.Placemark> placemarks = [];
-                                    try {
-                                      List<geocoding.Location> locations =
+                                  () async {
+                                List<geocoding.Placemark> placemarks = [];
+                                try {
+                                  List<geocoding.Location> locations =
                                       await geocoding
                                           .locationFromAddress(pattern);
-                                      if (locations.isNotEmpty) {
-                                        placemarks = await Future.wait(
-                                          locations.map((location) =>
-                                              geocoding.placemarkFromCoordinates(
-                                                location.latitude,
-                                                location.longitude,
-                                              )),
-                                        ).then((results) =>
-                                            results.expand((x) => x).toList());
-                                      }
-                                    } catch (e) {
-                                      // Handle error if needed
-                                    }
-                                    completer.complete(placemarks);
-                                  });
+                                  if (locations.isNotEmpty) {
+                                    placemarks = await Future.wait(
+                                      locations.map((location) =>
+                                          geocoding.placemarkFromCoordinates(
+                                            location.latitude,
+                                            location.longitude,
+                                          )),
+                                    ).then((results) =>
+                                        results.expand((x) => x).toList());
+                                  }
+                                } catch (e) {
+                                  // Handle error if needed
+                                }
+                                completer.complete(placemarks);
+                              });
                               return completer.future;
                             },
                             itemBuilder:
@@ -1094,16 +1103,16 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               return ListTile(
                                 leading: const Icon(Icons.location_on,
                                     color:
-                                    Colors.green), // Customize icon color
+                                        Colors.green), // Customize icon color
                                 title: Text(
                                   suggestion.name ??
                                       'No Country/City Available',
                                   style: const TextStyle(
                                     fontFamily:
-                                    'sans', // Replace with your font family
+                                        'sans', // Replace with your font family
                                     fontSize: 16.0,
                                     fontWeight:
-                                    FontWeight.w400, // Customize font size
+                                        FontWeight.w400, // Customize font size
                                     color: Colors.black, // Customize text color
                                   ),
                                 ),
@@ -1111,10 +1120,10 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                   suggestion.locality ?? 'No locality Exists',
                                   style: const TextStyle(
                                     fontFamily:
-                                    'Arial', // Replace with your font family
+                                        'Arial', // Replace with your font family
                                     fontSize: 14.0, // Customize font size
                                     color:
-                                    Colors.black54, // Customize text color
+                                        Colors.black54, // Customize text color
                                   ),
                                 ),
                               );
@@ -1125,10 +1134,11 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                   '${suggestion.name ?? ''}, ${suggestion.locality ?? ''}';
                               try {
                                 List<geocoding.Location> locations =
-                                await geocoding
-                                    .locationFromAddress(address);
+                                    await geocoding
+                                        .locationFromAddress(address);
                                 if (locations.isNotEmpty) {
                                   final location = locations.first;
+
                                   _googleMapController.animateCamera(
                                     CameraUpdate.newCameraPosition(
                                       CameraPosition(
@@ -1275,6 +1285,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       ),
     );
   }
+
   void _updateRouteData() {
     try {
       for (int i = 0; i < _markers.length; i++) {
@@ -1304,6 +1315,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error updating route data: $e');
     }
   }
+
   void _updatePolylines() {
     _polylines.clear();
     if (_markerPositions.length > 1) {
@@ -1334,14 +1346,14 @@ class _Fetch_InputState extends State<Fetch_Input> {
                     _isCustomMode = true;
                   });
                 },
-                child: const Text('Manual Placing'),
+                child: const Text('Place Marker Manually'),
               ),
               ElevatedButton(
                 onPressed: () {
                   Navigator.pop(context);
                   _showFileSelectionPopup();
                 },
-                child: const Text('Load From File'),
+                child: const Text('Load Coordinates from File'),
               ),
             ],
           ),
@@ -1359,47 +1371,74 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     // Filter the manifest for .txt files in the 'images/' directory
     final txtFiles = manifestMap.keys
-        .where((String key) => key.startsWith('images/') && key.endsWith('.txt'))
+        .where(
+            (String key) => key.startsWith('images/') && key.endsWith('.txt'))
         .toList();
 
     return txtFiles;
   }
 
+
+
+
   Future<void> _showFileSelectionPopup() async {
     List<String> files = await _getAssetFiles(); // Get list of files
-
+    String? selectedFile; // To hold the selected file
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Select a File'),
-          content: Container(
-            width: double.maxFinite,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: files.length,
-                    itemBuilder: (context, index) {
-                      return ListTile(
-                        title: Text(files[index]),
-                        onTap: () {
-                          Navigator.pop(context);
-                          _loadMarkersFromFile(files[index]);
-                        },
-                      );
+          title: const Text('Select File to Plot'),
+          content: StatefulBuilder(
+            builder: (BuildContext context, StateSetter setState) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  DropdownButton<String>(
+                    hint: const Text('Choose File'),
+                    value: selectedFile,
+                    isExpanded: true,
+                    onChanged: (String? newValue) {
+                      setState(() {
+                        selectedFile = newValue;
+                      });
                     },
+                    items: files.map<DropdownMenuItem<String>>((String file) {
+                      return DropdownMenuItem<String>(
+                        value: file,
+                        child: Text(file),
+                      );
+                    }).toList(),
                   ),
-                ),
-              ],
-            ),
+                ],
+              );
+            },
           ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                if (selectedFile != null) {
+                  Navigator.pop(context);
+                  _loadMarkersFromFile(selectedFile!);
+                }
+              },
+              child: const Text('Plot Area'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('Cancel'),
+            ),
+          ],
         );
       },
     );
-
   }
+
+
+
+
 
   void _onMapTap(LatLng latLng) {
     final markerId = MarkerId('M${_markers.length + 1}');
@@ -1442,7 +1481,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
         final newMarker = Marker(
           markerId: markerId,
           position: latLng,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          icon:
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
         );
 
         _markers.add(newMarker);
@@ -1456,9 +1496,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       Selecting_Path_Direction_and_Turn(); // Call the function if the shape is closed
     });
   }
-
-
-
 
 //area calculation of field
   double _calculateSphericalPolygonArea(List<LatLng> points) {
@@ -1643,5 +1680,4 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     return areaInAcres;
   }*/
-
 }

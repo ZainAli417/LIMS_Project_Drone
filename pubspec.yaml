@@ -41,7 +41,11 @@ flutter:
   uses-material-design: true
 
   assets:
-    - images/Islamabad.txt
+    - images/Askary 14.txt
+    - images/DHA PHASE 1(2).txt
+    - images/DHA PHASE 1.txt
+    - images/jinnah.txt
+    - images/jinnah Park.txt
     - images/Jinnah_Hall.txt
-    - images/rawalpindi.txt
+
 

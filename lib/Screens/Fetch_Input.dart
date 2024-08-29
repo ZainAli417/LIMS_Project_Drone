@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:google_fonts/google_fonts.dart';
+
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -17,6 +20,7 @@ import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:geocoding/geocoding.dart' as geocoding;
 import 'package:latlong2/latlong.dart' as latlong;
 import 'package:flutter_asset_manager/flutter_asset_manager.dart';
+import 'package:http/http.dart' as http;
 
 enum PathDirection { horizontal, vertical }
 
@@ -36,6 +40,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
   // Left = 1
   // Right = 2
   // Stop = 0
+  late BitmapDescriptor _carIcon;
+  late BitmapDescriptor _ugvIcon;
 
   @override
   void initState() {
@@ -49,6 +55,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
       selectedMarker = _markers.first.position;
     }
     _carPosition = LatLng(0, 0); // Initialize with a default value
+
+    _loadCarIcons();
   }
 
   LatLng _currentPosition = LatLng(0, 0); // Default position
@@ -96,7 +104,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error updating value in database: $e');
     }
   }
-
   void _updateValueInDatabaseOnRelease() async {
     try {
       await _databaseReference.child('Direction').set(0);
@@ -104,7 +111,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error updating value in database: $e');
     }
   }
-
   void _resetMarkers() async {
     setState(() {
       _markers
@@ -137,7 +143,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error resetting data in database: $e');
     }
   }
-
   double calculate_selcted_segemnt_distance(List<LatLng> path) {
     double totalDistance = 0.0;
     for (int i = 0; i < path.length - 1; i++) {
@@ -147,13 +152,11 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     return totalDistance;
   } // Return distance in kilometers
-
   LatLng _lerpLatLng(LatLng a, LatLng b, double t) {
     double lat = a.latitude + (b.latitude - a.latitude) * t;
     double lng = a.longitude + (b.longitude - a.longitude) * t;
     return LatLng(lat, lng);
   }
-
   void _storeTimeDurationInDatabase(double totalDistanceInKM) {
     try {
       const double speed = 10; // Speed in meters per second
@@ -167,7 +170,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error storing time duration in database: $e');
     }
   }
-
   void _storeTimeLeftInDatabase(double remainingDistanceKM_SelectedPath) async {
     try {
       const double speed = 10; // Speed in meters per second
@@ -181,7 +183,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error storing time duration in database: $e');
     }
   }
-
   double calculateonelinedistance(LatLng start, LatLng end) {
     const R = 6371; // Radius of the Earth in kilometers
     double lat1 = start.latitude * pi / 180;
@@ -195,7 +196,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     double c = 2 * atan2(sqrt(a), sqrt(1 - a));
     return R * c; // Distance in kilometers
   }
-
   double _calculateTotalDistanceZIGAG(List<LatLng> path) {
     double totalzigzagdis = 0.0;
     for (int i = 0; i < path.length - 1; i++) {
@@ -203,7 +203,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     return totalzigzagdis;
   } // Return distance in kilometers
-
   void _startMovement(List<LatLng> path) {
     if (path.isEmpty) {
       print("Path is empty, cannot start movement");
@@ -280,7 +279,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     });
   }
-
   void _onPathComplete() {
     // Clear all paths and stop movement
     setState(() {
@@ -291,7 +289,36 @@ class _Fetch_InputState extends State<Fetch_Input> {
     });
   }
 
+
+  Future<void> _loadCarIcons() async {
+    // Load the image from your assets
+    const ImageConfiguration imageConfiguration = ImageConfiguration(
+      size: Size(20, 20),
+    );
+    _carIcon = await BitmapDescriptor.fromAssetImage(
+      imageConfiguration,
+
+      'images/ugv_dead.png', // Replace with your actual asset path
+    );
+    _ugvIcon = await BitmapDescriptor.fromAssetImage(
+      imageConfiguration,
+      'images/ugv_active.png', // Replace with your actual asset path
+    );
+  }
+
   Future<void> _addCarMarker(bool isSelectedSegment) async {
+    setState(() {
+      _markers.add(Marker(
+        markerId: const MarkerId('car'),
+        position: _carPosition,
+        icon: isSelectedSegment
+            ? _carIcon
+            : _ugvIcon, // Use ternary operator here
+      ));
+    });
+  }
+
+  /*Future<void> _addCarMarker(bool isSelectedSegment) async {
     setState(() {
       _markers.add(Marker(
         markerId: const MarkerId('car'),
@@ -301,7 +328,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
             : BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
       ));
     });
-  }
+  }*/
 
   void _showRoutesDialog() {
     List<int> selectedSegments = [];
@@ -781,23 +808,310 @@ class _Fetch_InputState extends State<Fetch_Input> {
     FocusScope.of(context).previousFocus();
   }
 
+  void _showInputSelectionPopup() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Select Coordinate Method'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  setState(() {
+                    _isCustomMode = true;
+                  });
+                },
+                child: const Text('Place Marker Manually'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _showFileSelectionPopup();
+                },
+                child: const Text('Load Coordinates from KML'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showFileSelectionPopup() async {
+    List<String> localFiles = await _getAssetFiles(); // Get list of local files
+    List<String> cloudFiles = await _fetchCloudFiles(); // Get list of cloud files
+
+    String? selectedLocalFile; // To hold the selected local file
+    String? selectedCloudFile; // To hold the selected cloud file
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Select File to Plot'),
+          content: StatefulBuilder(
+            builder: (BuildContext context, StateSetter setState) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Text('Select File from Local:'),
+                  DropdownButton<String>(
+                    hint: const Text('Choose File'),
+                    value: selectedLocalFile,
+                    isExpanded: true,
+                    onChanged: (String? newValue) {
+                      setState(() {
+                        selectedLocalFile = newValue;
+                      });
+                    },
+                    items: localFiles.map<DropdownMenuItem<String>>((String file) {
+                      return DropdownMenuItem<String>(
+                        value: file,
+                        child: Text(file),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text('Select File from Cloud:'),
+                  DropdownButton<String>(
+                    hint: const Text('Choose File'),
+                    value: selectedCloudFile,
+                    isExpanded: true,
+                    onChanged: (String? newValue) {
+                      setState(() {
+                        selectedCloudFile = newValue;
+                      });
+                    },
+                    items: cloudFiles.map<DropdownMenuItem<String>>((String file) {
+                      return DropdownMenuItem<String>(
+                        value: file,
+                        child: Text(file),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              );
+            },
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                if (selectedLocalFile != null || selectedCloudFile != null) {
+                  Navigator.pop(context);
+                  if (selectedLocalFile != null) {
+                    _loadMarkersFromFile(selectedLocalFile!); // Local file logic
+                  } else if (selectedCloudFile != null) {
+                    _loadMarkersFromCloudFile(selectedCloudFile!); // Cloud file logic
+                  }
+                }
+              },
+              child: const Text('Plot Area'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _loadMarkersFromCloudFile(String fileName) async {
+    try {
+      final Reference fileRef = FirebaseStorage.instance.ref().child(fileName);
+      final String downloadUrl = await fileRef.getDownloadURL();
+
+      final response = await http.get(Uri.parse(downloadUrl));
+
+      if (response.statusCode == 200) {
+        final contents = response.body;
+
+        _markers.clear();
+        _markerPositions.clear();
+
+        final lines = contents.split('\n');
+        for (var line in lines) {
+          final parts = line.split(',');
+          if (parts.length >= 2) {
+            final lat = double.parse(parts[0].trim());
+            final lng = double.parse(parts[1].trim());
+            final latLng = LatLng(lat, lng);
+
+            final markerId = MarkerId('M${_markers.length + 1}');
+            final newMarker = Marker(
+              markerId: markerId,
+              position: latLng,
+              icon: BitmapDescriptor.defaultMarkerWithHue(
+                  BitmapDescriptor.hueAzure),
+            );
+
+            _markers.add(newMarker);
+            _markerPositions.add(latLng);
+          }
+        }
+
+        setState(() {
+          _updatePolylines();
+          _updateRouteData();
+          Selecting_Path_Direction_and_Turn();
+        });
+
+        // Animate the camera to the first marker after loading markers
+        animateToFirstMarker();
+      } else {
+        print('Error fetching cloud file: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error loading markers from cloud file: $e');
+    }
+  }
+  Future<void> _loadMarkersFromFile(String fileName) async {
+    final contents = await rootBundle.loadString(fileName);
+
+    _markers.clear();
+    _markerPositions.clear();
+
+    final lines = contents.split('\n');
+    for (var line in lines) {
+      final parts = line.split(',');
+      if (parts.length >= 2) {
+        final lat = double.parse(parts[0].trim());
+        final lng = double.parse(parts[1].trim());
+        final latLng = LatLng(lat, lng);
+
+        final markerId = MarkerId('M${_markers.length + 1}');
+        final newMarker = Marker(
+          markerId: markerId,
+          position: latLng,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        );
+
+        _markers.add(newMarker);
+        _markerPositions.add(latLng);
+      }
+    }
+
+    setState(() {
+      _updatePolylines();
+      _updateRouteData();
+      Selecting_Path_Direction_and_Turn(); // Call the function if the shape is closed
+    });
+
+    // Animate the camera to the first marker after loading markers
+    animateToFirstMarker();
+  }
+
+
+// Function to fetch files from Firebase Storage
+  Future<List<String>> _fetchCloudFiles() async {
+    List<String> fileNames = [];
+    try {
+      final ListResult result = await FirebaseStorage.instance.ref().listAll();
+      for (var ref in result.items) {
+        fileNames.add(ref.name); // Add file name to the list
+      }
+    } catch (e) {
+      print('Error fetching cloud files: $e');
+    }
+    return fileNames;
+  }
+
+
+  Future<List<String>> _getAssetFiles() async {
+    // Load the AssetManifest file
+    final manifestContent = await rootBundle.loadString('AssetManifest.json');
+
+    // Decode the JSON into a Map<String, dynamic>
+    final Map<String, dynamic> manifestMap = json.decode(manifestContent);
+
+    // Filter the manifest for .txt files in the 'images/' directory
+    final txtFiles = manifestMap.keys
+        .where(
+            (String key) => key.startsWith('images/') && key.endsWith('.kml'))
+        .toList();
+
+    return txtFiles;
+  }
+
+  void animateToFirstMarker() {
+    if (_isCustomMode == false && _markerPositions.isNotEmpty) {
+      _googleMapController.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: _markerPositions.first, // Animate to first marker position
+            zoom: 50.0,
+          ),
+        ),
+      );
+    }
+  }
+
+
 //UI BUILD
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text("Smart Controller"),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.fullscreen),
-            onPressed: () {
-              setState(() {
-                _isFullScreen = !_isFullScreen;
-              });
-            },
+        elevation: 0,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.only(
+            bottomLeft: Radius.circular(30),
+            bottomRight: Radius.circular(30),
           ),
-        ],
+        ),
+        backgroundColor: Colors.indigo[800],
+        toolbarHeight: 80, // Custom height for the AppBar
+        leading: IconButton(
+          icon: Icon(
+            Icons.arrow_back,
+            color: Colors.white,
+            size: 25,
+          ),
+          onPressed: () {
+            Navigator.pop(context);
+          },
+        ),
+        flexibleSpace: Padding(
+          padding:
+              const EdgeInsets.only(top: 40.0), // Padding to control spacing
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // First Row: Logo, Title, Notification Icon, Three Dots Icon
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    "Smart",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: GoogleFonts.poppins().fontFamily,
+                    ),
+                  ),
+                  Text(
+                    " Controller",
+                    style: TextStyle(
+                      color: Colors.redAccent,
+                      fontWeight: FontWeight.w400,
+                      fontSize: 24,
+                      fontFamily: GoogleFonts.poppins().fontFamily,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
       body: SingleChildScrollView(
         child: Column(
@@ -986,48 +1300,47 @@ class _Fetch_InputState extends State<Fetch_Input> {
                   children: [
                     _currentLocation == null
                         ? const Center(child: CircularProgressIndicator())
-                        : GoogleMap(
-                            initialCameraPosition: _isCustomMode == false &&
-                                    _markerPositions.isNotEmpty
-                                ? CameraPosition(
-                                    target: _markerPositions
-                                        .first, // First LatLng from file
-                                    zoom: 50.0,
-                                  )
-                                : CameraPosition(
-                                    target: LatLng(
-                                      _currentLocation!.latitude!,
-                                      _currentLocation!.longitude!,
-                                    ),
-                                    zoom: 15.0,
-                                  ),
-                            markers: {
-                              ..._markers,
-                              Marker(
-                                markerId: const MarkerId('currentLocation'),
-                                position: _currentPosition,
-                                icon: BitmapDescriptor.defaultMarkerWithHue(
-                                    BitmapDescriptor.hueViolet),
-                              ),
-                            },
-                            polylines: _polylines,
-                            polygons: polygons,
-                            zoomGesturesEnabled: true,
-                            rotateGesturesEnabled: true,
-                            buildingsEnabled: true,
-                            scrollGesturesEnabled: true,
-                            onTap: _isCustomMode ? _onMapTap : null,
-                            onMapCreated: (controller) {
-                              _googleMapController = controller;
-                            },
-                            gestureRecognizers: <Factory<
-                                OneSequenceGestureRecognizer>>{
-                              Factory<OneSequenceGestureRecognizer>(
-                                  () => EagerGestureRecognizer()),
-                            },
-                            myLocationEnabled: true,
-                            myLocationButtonEnabled: true,
+                        :GoogleMap(
+                      initialCameraPosition: _currentLocation != null
+                          ? CameraPosition(
+                        target: LatLng(
+                          _currentLocation!.latitude!,
+                          _currentLocation!.longitude!,
+                        ),
+                        zoom: 15.0,
+                      )
+                          : const CameraPosition(
+                        target: LatLng(0, 0), // Default fallback position
+                        zoom: 2.0, // Low zoom for global view
+                      ),
+                      markers: {
+                        ..._markers,
+                        if (_currentPosition != null)
+                          Marker(
+                            markerId: const MarkerId('currentLocation'),
+                            position: _currentPosition,
+                            icon: BitmapDescriptor.defaultMarkerWithHue(
+                                BitmapDescriptor.hueViolet),
                           ),
+                      },
+                      polylines: _polylines,
+                      polygons: polygons,
+                      zoomGesturesEnabled: true,
+                      rotateGesturesEnabled: true,
+                      buildingsEnabled: true,
+                      scrollGesturesEnabled: true,
+                      onTap: _isCustomMode ? _onMapTap : null,
+                      onMapCreated: (controller) {
+                        _googleMapController = controller;
+                        // Camera animation is now handled separately.
+                      },
+                      gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                        Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
+                      },
+                      myLocationEnabled: true,
+                      myLocationButtonEnabled: true,
+                    ),
+
                     Padding(
                       padding: const EdgeInsets.all(8.0),
                       child: ClipRRect(
@@ -1050,12 +1363,12 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               decoration: InputDecoration(
                                 border: InputBorder.none,
                                 labelText: 'Search Spraying Location',
-                                labelStyle: const TextStyle(
+                                labelStyle:  TextStyle(
                                   fontFamily: 'impact',
                                   fontWeight: FontWeight
-                                      .w500, // Replace with your font family
+                                      .w600, // Replace with your font family
                                   fontSize: 14.0, // Customize label font size
-                                  color: Colors.teal, // Customize label color
+                                  color: Colors.indigo[800], // Customize label color
                                 ),
                                 suffixIcon: IconButton(
                                   icon: const Icon(Icons.search,
@@ -1202,66 +1515,74 @@ class _Fetch_InputState extends State<Fetch_Input> {
                             children: [
                               Text(
                                 "Area: ${_calculateSphericalPolygonArea(_markerPositions).toStringAsFixed(2)} acres",
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: Colors.teal,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                  fontFamily: GoogleFonts.poppins().fontFamily,
                                 ),
                               ),
                               Text(
-                                "Total Path Dis.: ${totalZigzagPathKm.toStringAsFixed(2)} Km",
-                                style: const TextStyle(
+                                "Total Dis.: ${totalZigzagPathKm.toStringAsFixed(2)} Km",
+                                style: TextStyle(
                                   color: Colors.red,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                  fontFamily: GoogleFonts.poppins().fontFamily,
                                 ),
                               ),
                               Text(
-                                "Remaining Path Dis.: ${_remainingDistanceKM_TotalPath.toStringAsFixed(2)} Km",
-                                style: const TextStyle(
+                                "Rem Dis.: ${_remainingDistanceKM_TotalPath.toStringAsFixed(2)} Km",
+                                style: TextStyle(
                                   color: Colors.green,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                  fontFamily: GoogleFonts.poppins().fontFamily,
                                 ),
                               ),
                               Text(
-                                "Selected Path Dis.: ${_totalDistanceKM.toStringAsFixed(2)} Km",
-                                style: const TextStyle(
+                                "Spray Dis.: ${_totalDistanceKM.toStringAsFixed(2)} Km",
+                                style: TextStyle(
                                   color: Colors.red,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                  fontFamily: GoogleFonts.poppins().fontFamily,
                                 ),
                               ),
                               Text(
-                                "Reamaining Selected Path Dis.: ${_remainingDistanceKM_SelectedPath.toStringAsFixed(2)} Km",
-                                style: const TextStyle(
-                                  fontSize: 13,
+                                "Rem Spray.: ${_remainingDistanceKM_SelectedPath.toStringAsFixed(2)} Km",
+                                style: TextStyle(
                                   color: Colors.green,
-                                  fontWeight: FontWeight.w500,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                  fontFamily: GoogleFonts.poppins().fontFamily,
                                 ),
                               ),
                               Text(
-                                "TIme Taken to Spray: ${timeduration.toStringAsFixed(2)} min",
-                                style: const TextStyle(
-                                  fontSize: 14,
+                                "Spray time: ${timeduration.toStringAsFixed(2)} min",
+                                style: TextStyle(
                                   color: Colors.red,
-                                  fontWeight: FontWeight.w500,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                  fontFamily: GoogleFonts.poppins().fontFamily,
                                 ),
                               ),
                               Text(
-                                "Remaining Time: ${TLM.toStringAsFixed(2)} min",
-                                style: const TextStyle(
-                                  fontSize: 13,
+                                "Rem Time: ${TLM.toStringAsFixed(2)} min",
+                                style: TextStyle(
                                   color: Colors.green,
-                                  fontWeight: FontWeight.w500,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                  fontFamily: GoogleFonts.poppins().fontFamily,
                                 ),
                               ),
-                              const Text(
+                              Text(
                                 "UGV Speed: 10m/s",
                                 style: TextStyle(
-                                  fontSize: 14,
                                   color: Colors.deepPurple,
-                                  fontWeight: FontWeight.w500,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                  fontFamily: GoogleFonts.poppins().fontFamily,
                                 ),
                               ),
                             ],
@@ -1330,116 +1651,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
   }
 
-  void _showInputSelectionPopup() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Select Coordinate Method'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  setState(() {
-                    _isCustomMode = true;
-                  });
-                },
-                child: const Text('Place Marker Manually'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _showFileSelectionPopup();
-                },
-                child: const Text('Load Coordinates from File'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<List<String>> _getAssetFiles() async {
-    // Load the AssetManifest file
-    final manifestContent = await rootBundle.loadString('AssetManifest.json');
-
-    // Decode the JSON into a Map<String, dynamic>
-    final Map<String, dynamic> manifestMap = json.decode(manifestContent);
-
-    // Filter the manifest for .txt files in the 'images/' directory
-    final txtFiles = manifestMap.keys
-        .where(
-            (String key) => key.startsWith('images/') && key.endsWith('.txt'))
-        .toList();
-
-    return txtFiles;
-  }
-
-
-
-
-  Future<void> _showFileSelectionPopup() async {
-    List<String> files = await _getAssetFiles(); // Get list of files
-    String? selectedFile; // To hold the selected file
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Select File to Plot'),
-          content: StatefulBuilder(
-            builder: (BuildContext context, StateSetter setState) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  DropdownButton<String>(
-                    hint: const Text('Choose File'),
-                    value: selectedFile,
-                    isExpanded: true,
-                    onChanged: (String? newValue) {
-                      setState(() {
-                        selectedFile = newValue;
-                      });
-                    },
-                    items: files.map<DropdownMenuItem<String>>((String file) {
-                      return DropdownMenuItem<String>(
-                        value: file,
-                        child: Text(file),
-                      );
-                    }).toList(),
-                  ),
-                ],
-              );
-            },
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () {
-                if (selectedFile != null) {
-                  Navigator.pop(context);
-                  _loadMarkersFromFile(selectedFile!);
-                }
-              },
-              child: const Text('Plot Area'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text('Cancel'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-
-
-
-
   void _onMapTap(LatLng latLng) {
     final markerId = MarkerId('M${_markers.length + 1}');
     final newMarker = Marker(
@@ -1463,39 +1674,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     });
   }
 
-  Future<void> _loadMarkersFromFile(String fileName) async {
-    final contents = await rootBundle.loadString(fileName);
-
-    _markers.clear();
-    _markerPositions.clear();
-
-    final lines = contents.split('\n');
-    for (var line in lines) {
-      final parts = line.split(',');
-      if (parts.length >= 2) {
-        final lat = double.parse(parts[0].trim());
-        final lng = double.parse(parts[1].trim());
-        final latLng = LatLng(lat, lng);
-
-        final markerId = MarkerId('M${_markers.length + 1}');
-        final newMarker = Marker(
-          markerId: markerId,
-          position: latLng,
-          icon:
-              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-        );
-
-        _markers.add(newMarker);
-        _markerPositions.add(latLng);
-      }
-    }
-
-    setState(() {
-      _updatePolylines();
-      _updateRouteData();
-      Selecting_Path_Direction_and_Turn(); // Call the function if the shape is closed
-    });
-  }
 
 //area calculation of field
   double _calculateSphericalPolygonArea(List<LatLng> points) {

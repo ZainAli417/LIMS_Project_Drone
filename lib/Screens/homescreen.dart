@@ -45,6 +45,7 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return MaterialApp(
       home: Scaffold(
+
         backgroundColor: Colors.white,
         appBar: AppBar(
           elevation: 0,
@@ -122,7 +123,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 5, 10, 5),
+                      padding: const EdgeInsets.fromLTRB(15, 5, 15, 5),
                       child: Row(
                         children: [
                           Text(
@@ -141,7 +142,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 5, 10, 5),
+                      padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
                       child: Container(
                         padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
                         width: 170,
@@ -189,7 +190,8 @@ class _MyHomePageState extends State<MyHomePage> {
         body: SingleChildScrollView(
 
           child: Container(
-            padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+
+            padding: const EdgeInsets.fromLTRB(3, 0, 1, 0),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.start,
               children: [

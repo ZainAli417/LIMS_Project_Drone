@@ -399,6 +399,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         },
                       ),
                     ),
+
                     Row(
                       children: [
                         ElevatedButton(
@@ -408,6 +409,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               borderRadius: BorderRadius.circular(10),
                             ),
                           ),
+
                           onPressed: () {
                             setState(() {
                               selectedSegments = List.generate(
@@ -1791,9 +1793,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
                             textFieldConfiguration: TextFieldConfiguration(
                               focusNode: _focusNode,
                               autofocus: false,
-                              style: const TextStyle(
-                                fontFamily:
-                                'poppins', // Replace with your font family
+                              style:  TextStyle(
+                                fontFamily: GoogleFonts.poppins().fontFamily,
+
                                 fontSize: 15.0, // Customize font size
                                 color: Colors.black, // Customize text color
                               ),
@@ -1801,7 +1803,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 border: InputBorder.none,
                                 labelText: 'Search Spraying Location',
                                 labelStyle: TextStyle(
-                                  fontFamily: 'poppins',
+                                  fontFamily: GoogleFonts.poppins().fontFamily,
                                   fontWeight: FontWeight
                                       .w600, // Replace with your font family
                                   fontSize: 14.0, // Customize label font size
@@ -1858,9 +1860,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 title: Text(
                                   suggestion.name ??
                                       'No Country/City Available',
-                                  style: const TextStyle(
-                                    fontFamily:
-                                    'sans', // Replace with your font family
+                                  style:  TextStyle(
+                                    fontFamily: GoogleFonts.poppins().fontFamily,
                                     fontSize: 16.0,
                                     fontWeight:
                                     FontWeight.w400, // Customize font size
@@ -1869,9 +1870,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 ),
                                 subtitle: Text(
                                   suggestion.locality ?? 'No locality Exists',
-                                  style: const TextStyle(
-                                    fontFamily:
-                                    'Arial', // Replace with your font family
+                                  style:  TextStyle(
+                                    fontFamily: GoogleFonts.poppins().fontFamily,
+
                                     fontSize: 14.0, // Customize font size
                                     color:
                                     Colors.black54, // Customize text color

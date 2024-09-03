@@ -7,8 +7,16 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:syncfusion_flutter_gauges/gauges.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import '../Constant/controller_weather.dart';
+import '../Constant/weather.dart';
 import '../shared_state.dart';
+import 'coustom.dart';
 import 'mapscreen.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:location/location.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:get/get.dart';
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key});
@@ -18,6 +26,7 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
+  final WeatherController weatherController = Get.put(WeatherController());
   static const LatLng pGooglePlex = LatLng(33.5923397, 73.0476774);
   final videourl = "https://www.youtube.com/watch?v=WhAfZhFxHTs";
   late YoutubePlayerController _controller;
@@ -27,11 +36,18 @@ class _MyHomePageState extends State<MyHomePage> {
   String totalDistance = '0.00';
   String remainingDistance = '0.00';
   String duration = '0.00';
-
+  String temperature = "10 C";
+  String weatherDescription = "NA";
+  String waterLevel = "80 %";
+  String city = "N/A";
+  String cityName = "N/A";
+  bool _isSolarOn = true;
   @override
   void initState() {
     super.initState();
+    _getPositionAndWeather();
     _fetchData();
+
     final videoid = YoutubePlayer.convertUrlToId(videourl);
     _controller = YoutubePlayerController(
       initialVideoId: videoid!,
@@ -41,11 +57,45 @@ class _MyHomePageState extends State<MyHomePage> {
     )..addListener(() {});
   }
 
+  Future<void> _getPositionAndWeather() async {
+    try {
+      Position position = await getPosition();
+      await weatherController.fetchWeatherData(
+          position.latitude, position.longitude);
+    } catch (e) {
+      print('Error fetching location or weather data: $e');
+    }
+  }
+
+  Future<Position> getPosition() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return Future.error('Location services are disabled.');
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        return Future.error('Location permissions are denied');
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      return Future.error(
+          'Location permissions are permanently denied, we cannot request permissions.');
+    }
+
+    return await Geolocator.getCurrentPosition();
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       home: Scaffold(
-
         backgroundColor: Colors.white,
         appBar: AppBar(
           elevation: 0,
@@ -56,107 +106,136 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
           ),
           backgroundColor: Colors.indigo[800],
-          toolbarHeight: 135, // Custom height for the AppBar
+          toolbarHeight: 160, // Custom height for the AppBar
           flexibleSpace: Padding(
-            padding:
-                const EdgeInsets.only(top: 40.0), // Padding to control spacing
+            padding: const EdgeInsets.fromLTRB(
+                15, 50, 10, 0), // Padding to control spacing
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 // First Row: Logo, Title, Notification Icon, Three Dots Icon
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    Container(
-                      width: 60,
-                      height: 60,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white, // Set the background color to white
+                    borderRadius: BorderRadius.circular(
+                        25), // Make the background rounded (capsule effect)
+                    boxShadow: const [
+                      BoxShadow(
                         color:
-                            Colors.white, // Set the background color to white
+                            Colors.black12, // Optional shadow for better look
+                        blurRadius: 10,
+                        offset: Offset(0, 4),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(1),
-                        child: ClipOval(
-                          child: Image.asset(
-                            fit: BoxFit.fill,
-                            'images/logo.png',
+                    ],
+                  ),
+                  padding: const EdgeInsets.fromLTRB(5, 5, 5, 5),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      Container(
+                        width: 50,
+                        height: 50,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color:
+                              Colors.white, // Set the background color to white
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(1),
+                          child: ClipOval(
+                            child: Image.asset(
+                              'images/logo.png',
+                              fit: BoxFit.fill,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          "LIMS",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                            fontFamily: GoogleFonts.poppins().fontFamily,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            "LIMS",
+                            style: TextStyle(
+                              color: Colors
+                                  .black, // Changed text color to black to be visible on white background
+                              fontSize: 20,
+                              fontWeight: FontWeight.w500,
+                              fontFamily: GoogleFonts.poppins().fontFamily,
+                            ),
                           ),
-                        ),
-                        Text(
-                          " Robo",
-                          style: TextStyle(
-                            color: Colors.redAccent,
-                            fontWeight: FontWeight.w400,
-                            fontSize: 24,
-                            fontFamily: GoogleFonts.poppins().fontFamily,
+                          Text(
+                            " Robo",
+                            style: TextStyle(
+                              color: Colors.red,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 24,
+                              fontFamily: GoogleFonts.poppins().fontFamily,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const Row(
-                      children: [
-                        Icon(Icons.notifications_active_outlined,
-                            color: Colors.white),
-                        SizedBox(width: 10),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                      const Row(
+                        children: [
+                          Icon(
+                            Icons.notifications_active_outlined,
+                            color: Colors.black,
+                            size: 25,
+                          ), // Adjusted icon color
+                          SizedBox(width: 10),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
+
                 const SizedBox(height: 10),
                 // Second Row: UGV Connected Widget, Rawalpindi Text, Location Icon
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
+                    // Weather Section
                     Padding(
                       padding: const EdgeInsets.fromLTRB(15, 5, 15, 5),
-                      child: Row(
-                        children: [
-                          Text(
-                            "Rawalpindi",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontFamily: GoogleFonts.poppins().fontFamily,
+                      child: Obx(() {
+                        return Row(
+                          children: [
+                            Text(
+                              weatherController.weather.value.cityname.isEmpty
+                                  ? "Loading..."
+                                  : weatherController.weather.value.cityname,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: GoogleFonts.poppins().fontFamily,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 5),
-                          const Icon(Icons.location_on_outlined,
-                              color: Colors.white),
-                          const SizedBox(width: 10),
-                        ],
-                      ),
+                            const SizedBox(width: 5),
+                            const Icon(Icons.location_on_outlined,
+                                color: Colors.white),
+                            const SizedBox(width: 10),
+                          ],
+                        );
+                      }),
                     ),
+
+                    // UGV Connected Section
                     Padding(
                       padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
                       child: Container(
                         padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
                         width: 170,
                         height: 40,
-                        decoration:  BoxDecoration(
+                        decoration: BoxDecoration(
                           color: Colors.indigo[800],
-                          borderRadius: BorderRadius.all(Radius.circular(5)),
+                          borderRadius:
+                              const BorderRadius.all(Radius.circular(5)),
                         ),
                         child: Container(
                           decoration: BoxDecoration(
                             color: Colors
                                 .white, // Set the background color to white
-                            borderRadius: BorderRadius.circular(
-                                10), // Add a 10 radius rounded corner
+                            borderRadius:
+                                BorderRadius.circular(10), // Rounded corners
                           ),
                           child: Row(
                             children: [
@@ -166,8 +245,8 @@ class _MyHomePageState extends State<MyHomePage> {
                                 child: Text(
                                   "UGV Connected ",
                                   style: TextStyle(
-                                    color: Colors
-                                        .indigo[800], // Update the text color to indigo
+                                    color: Colors.indigo[
+                                        800], // Text color set to indigo
                                     fontWeight: FontWeight.bold,
                                     fontSize: 12,
                                     fontFamily:
@@ -188,115 +267,198 @@ class _MyHomePageState extends State<MyHomePage> {
           ),
         ),
         body: SingleChildScrollView(
-
           child: Container(
-
-            padding: const EdgeInsets.fromLTRB(3, 0, 1, 0),
+            padding: const EdgeInsets.fromLTRB(3, 10, 1, 0),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.start,
               children: [
-
                 Container(
-                  padding: const EdgeInsets.fromLTRB(10, 9, 10, 5),
-                  width: 450,
-                  height: 500,
+                  padding: const EdgeInsets.fromLTRB(12, 9, 12, 5),
+                  width: 700,
+                  height: 615,
                   decoration: const BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.all(Radius.circular(15)),
                   ),
                   child: Column(
+                    // Enclose everything in a Column
+
                     children: [
-                      const SizedBox(height: 15),
+                      Row(
+                        // First Row
+
+                        children: [
+                          SvgPicture.asset(
+                            'images/sunny.svg', // Path to your SVG file
+                            height: 20, // Optional: Set the height as needed
+                            width: 20, // Optional: Set the width as needed
+                          ),
+                          const SizedBox(
+                            width: 10,
+                          ),
+                          Text(
+                            "Weather Stats",
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 17,
+                              fontFamily: GoogleFonts.poppins().fontFamily,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 15), // Spacing between rows
+
+                      Row(
+                        // Second Row (Warning message)
+
+                        mainAxisAlignment: MainAxisAlignment.center,
+
+                        children: [
+                          const Icon(Icons.warning,
+                              color: Colors.red, size: 20),
+                          Expanded(
+                            child: Text(
+                              "Don't Drive UGV when wind speed is above 50Mph",
+                              style: TextStyle(
+                                color: Colors.red,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
+                                fontFamily: GoogleFonts.poppins().fontFamily,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 15), // Spacing between rows
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              "Today There Are Chances Of ${weatherController.weather.value.condition.isEmpty ? "N/A..." : weatherController.weather.value.condition}",
+                              style: TextStyle(
+                                color: Colors.teal,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                                fontFamily: GoogleFonts.poppins().fontFamily,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 15), // Spacing between rows
+
                       Expanded(
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.all(Radius.circular(20)),
-                          ),
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              Card(
-                                elevation: 5, // Add a slight elevation to the card
-                                child: GestureDetector(
-                                  onDoubleTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => MapScreen(),
-                                      ),
-                                    );
-                                    print('pressed');
-                                  },
-                                  child: Container(
-                                    height: 500,
-                                    width: double.infinity, // Make the map wider by setting width to infinity
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(5.0),
-                                      child: GoogleMap(
-                                        initialCameraPosition: const CameraPosition(
-                                          target: pGooglePlex,
-                                          zoom: 15,
-                                        ),
-                                        markers: {
-                                          const Marker(
-                                            markerId: MarkerId('GooglePlex'),
-                                            position: pGooglePlex,
-                                          ),
-                                        },
-                                        // Enable zooming in and out
-                                        zoomGesturesEnabled: true,
-                                        // Enable rotating gestures
-                                        rotateGesturesEnabled: true,
-                                        // Enable tilting gestures
-                                        tiltGesturesEnabled: true,
-                                        // Enable scrolling gestures
-                                        scrollGesturesEnabled: true,
+                        child: GridView.count(
+                          crossAxisCount: 3,
+                          mainAxisSpacing: 10,
+                          crossAxisSpacing: 10,
+                          children: [
+                            Obx(() {
+                              return WeatherCard(
+                                icon: Icons.wind_power_outlined,
+                                label: 'Wind Speed',
+                                value:
+                                    '${weatherController.weather.value.windspeed.toStringAsFixed(1)} m/s',
+                                cardColor: Colors.teal,
+                                textColor: Colors.white,
+                              );
+                            }),
+
+                            Obx(() {
+                              return WeatherCard(
+                                icon: Icons.water_drop_outlined,
+                                label: 'Water Level',
+                                value:
+                                    '${weatherController.weather.value.humidity}%',
+                                cardColor: Colors.blue,
+                                textColor: Colors.white,
+                              );
+                            }),
+
+                            Obx(() {
+                              return WeatherCard(
+                                icon: Icons.thermostat_auto_outlined,
+                                label: 'Temperature',
+                                value:
+                                    '${weatherController.weather.value.temp.toStringAsFixed(1)} °C',
+                                cardColor: Colors.purple,
+                                textColor: Colors.white,
+                              );
+                            }),
+
+                            // Widget spanning two columns
+
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        Fetch_Input(controller: _controller),
+                                  ),
+                                );
+                              },
+                              child: Card(
+                                elevation: 8,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                ),
+                                color: Colors.white,
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Image.asset(
+                                      'images/controll.png', // Replace with your image path
+                                      height: 85,
+                                      width: 100,
+                                    ),
+                                    const SizedBox(height: 5),
+                                    Text(
+                                      'Smart Controller',
+                                      style: TextStyle(
+                                        color: Colors.indigo,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        fontFamily:
+                                            GoogleFonts.poppins().fontFamily,
                                       ),
                                     ),
-                                  ),
+                                  ],
                                 ),
                               ),
-                              Positioned(
-                                top: 10,
-                                right: 10,
-                                child: Container(
-                                  decoration: const BoxDecoration(
-                                    color: Colors
-                                        .white, // Color of the rounded container
-                                    shape: BoxShape
-                                        .circle, // Makes the container round
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.grey, // Optional shadow
-                                        blurRadius: 8,
-                                        offset: Offset(2, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: FloatingActionButton(
-                                    onPressed: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) => Fetch_Input(
-                                              controller: _controller),
-                                        ),
-                                      );
-                                    },
-                                    backgroundColor: Colors.white,
-                                    mini: true,
-                                    child: Image.asset(
-                                      'images/control.png',
-                                      width: 35,
-                                      height: 35,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
+                      ),
+                      Row(
+                        // First Row
+
+                        children: [
+                          Image.asset(
+                            'images/field.png', // Path to your SVG file
+                            height: 35, // Optional: Set the height as needed
+                            width: 35, // Optional: Set the width as needed
+                          ),
+                          const SizedBox(
+                            width: 10,
+                          ),
+                          Text(
+                            "Field Stats",
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 17,
+                              fontFamily: GoogleFonts.poppins().fontFamily,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 10),
                       Card(
@@ -375,45 +537,8 @@ class _MyHomePageState extends State<MyHomePage> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                Container(
-                  color: Colors.white,
-                  padding: const EdgeInsets.fromLTRB(11, 0, 0, 0),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.cloud_outlined,
-                        color: Colors.black,
-                        size: 20,
-                      ),
-                      const SizedBox(
-                        width: 10,
-                      ),
-                      Text(
-                        "Weather",
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15,
-                          fontFamily: GoogleFonts.poppins().fontFamily,
-                        ),
-                      ),
-                      const SizedBox(
-                        width: 200,
-                      ),
-                     /* Container(
-                        width: 25,
-                        height: 25,
-                        decoration: const BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.all(Radius.circular(3))),
-                        child: const Icon(Icons.more_horiz_outlined),
-                      ),*/
-                    ],
-                  ),
-                ),
-                const SizedBox(
-                  height: 15,
-                ),
+                /*
+
                 Card(
                   elevation: 4,
                   shape: RoundedRectangleBorder(
@@ -425,54 +550,64 @@ class _MyHomePageState extends State<MyHomePage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Circular Temperature Widget inside Card
+
                         Container(
                           padding: const EdgeInsets.all(10),
                           child: SizedBox(
                             width: 80,
                             height: 80,
-                            child: SfRadialGauge(
-                              axes: <RadialAxis>[
-                                RadialAxis(
-                                    minimum: 0,
-                                    maximum: 100,
+                            child: Obx(() {
+                              return SfRadialGauge(
+                                axes: <RadialAxis>[
+                                  RadialAxis(
+                                    minimum:
+                                        -30, // Adjust minimum based on your expected temperature range
+                                    maximum:
+                                        50, // Adjust maximum based on your expected temperature range
                                     showLabels: false,
                                     showTicks: false,
                                     startAngle: 270,
                                     endAngle: 270,
-                                    axisLineStyle:  AxisLineStyle(
+                                    axisLineStyle: AxisLineStyle(
                                       thickness: 1,
                                       color: Colors.indigo[800],
                                       thicknessUnit: GaugeSizeUnit.factor,
                                     ),
-                                    pointers: const <GaugePointer>[
+                                    pointers: <GaugePointer>[
                                       RangePointer(
-                                        value: 70,
+                                        value: weatherController.weather.value
+                                            .temp, // Use fetched temperature
                                         width: 0.15,
                                         color: Colors.white,
                                         pointerOffset: 0.1,
                                         cornerStyle: CornerStyle.bothCurve,
                                         sizeUnit: GaugeSizeUnit.factor,
-                                      )
+                                      ),
                                     ],
                                     annotations: <GaugeAnnotation>[
                                       GaugeAnnotation(
                                         positionFactor: 0.1,
                                         angle: 90,
                                         widget: Padding(
-                                            padding: EdgeInsets.only(top: 30),
-                                            child: Text("10 °C",
-                                                style: TextStyle(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.w500,
-                                                  fontSize: 20,
-                                                  fontFamily:
-                                                      GoogleFonts.poppins()
-                                                          .fontFamily,
-                                                ))),
+                                          padding:
+                                              const EdgeInsets.only(top: 30),
+                                          child: Text(
+                                            "${weatherController.weather.value.temp.toStringAsFixed(1)}°C", // Display temperature with °C
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w500,
+                                              fontSize: 20,
+                                              fontFamily: GoogleFonts.poppins()
+                                                  .fontFamily,
+                                            ),
+                                          ),
+                                        ),
                                       ),
-                                    ]),
-                              ],
-                            ),
+                                    ],
+                                  ),
+                                ],
+                              );
+                            }),
                           ),
                         ),
 
@@ -486,35 +621,6 @@ class _MyHomePageState extends State<MyHomePage> {
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
                               // Warning Text
-                              Container(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 8.0),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(Icons.warning,
-                                        color: Colors.red, size: 20),
-                                    const SizedBox(width: 5),
-                                    Expanded(
-                                      child: Text(
-                                        "Don't Drive UGV when wind speed is above 50Mph",
-                                        style: TextStyle(
-                                          color: Colors.red,
-                                          fontWeight: FontWeight.w500,
-                                          fontSize: 11,
-                                          fontFamily:
-                                              GoogleFonts.poppins().fontFamily,
-                                        ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
 
                               const SizedBox(height: 15),
 
@@ -522,22 +628,32 @@ class _MyHomePageState extends State<MyHomePage> {
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  SvgPicture.asset(
-                                    'images/sunny.svg',
-                                    height: 24,
-                                    width: 24,
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    "Sunny Weather",
-                                    style: TextStyle(
-                                      color: Colors.black,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 15,
-                                      fontFamily:
-                                          GoogleFonts.poppins().fontFamily,
-                                    ),
-                                  ),
+                                  Obx(() {
+                                    return Row(
+                                      children: [
+                                        SvgPicture.asset(
+                                          'images/${weatherController.weather.value.condition.toLowerCase()}.svg',
+                                          height: 24,
+                                          width: 24,
+                                        ),
+                                        const SizedBox(width: 5),
+                                        Text(
+                                          weatherController.weather.value
+                                                  .condition.isEmpty
+                                              ? "Loading..." // Display "Loading..." until the data is fetched
+                                              : weatherController.weather.value
+                                                  .condition, // Display fetched condition like RAINY, SUNNY, CLOUDY
+                                          style: TextStyle(
+                                            color: Colors.black,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 15,
+                                            fontFamily: GoogleFonts.poppins()
+                                                .fontFamily,
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  }),
                                 ],
                               ),
 
@@ -563,16 +679,22 @@ class _MyHomePageState extends State<MyHomePage> {
                                       const SizedBox(height: 10),
                                       Row(
                                         children: [
-                                          Text(
-                                            "36",
-                                            style: TextStyle(
-                                              color: Colors.black,
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 15,
-                                              fontFamily: GoogleFonts.poppins()
-                                                  .fontFamily,
-                                            ),
-                                          ),
+                                          Obx(() {
+                                            return Text(
+                                              weatherController
+                                                  .weather.value.windspeed
+                                                  .toStringAsFixed(
+                                                      0), // Display the wind speed
+                                              style: TextStyle(
+                                                color: Colors.black,
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 15,
+                                                fontFamily:
+                                                    GoogleFonts.poppins()
+                                                        .fontFamily,
+                                              ),
+                                            );
+                                          }),
                                           const SizedBox(width: 3),
                                           Text(
                                             "m/h",
@@ -603,42 +725,47 @@ class _MyHomePageState extends State<MyHomePage> {
                                       SizedBox(
                                         width: 60,
                                         height: 60,
-                                        child: SfRadialGauge(
-                                          axes: <RadialAxis>[
-                                            RadialAxis(
-                                              minimum: 0,
-                                              maximum: 100,
-                                              showLabels: false,
-                                              showTicks: false,
-                                              startAngle: 270,
-                                              endAngle: 270,
-                                              axisLineStyle:
-                                                  const AxisLineStyle(
-                                                thickness: 1,
-                                                color: Colors.blue,
-                                                thicknessUnit:
-                                                    GaugeSizeUnit.factor,
-                                              ),
-                                              pointers: const <GaugePointer>[
-                                                RangePointer(
-                                                  value: 80,
-                                                  width: 0.15,
-                                                  color: Colors.white,
-                                                  pointerOffset: 0.1,
-                                                  cornerStyle:
-                                                      CornerStyle.bothCurve,
-                                                  sizeUnit:
+                                        child: Obx(() {
+                                          return SfRadialGauge(
+                                            axes: <RadialAxis>[
+                                              RadialAxis(
+                                                minimum: 0,
+                                                maximum: 100,
+                                                showLabels: false,
+                                                showTicks: false,
+                                                startAngle: 270,
+                                                endAngle: 270,
+                                                axisLineStyle:
+                                                    const AxisLineStyle(
+                                                  thickness: 1,
+                                                  color: Colors.blue,
+                                                  thicknessUnit:
                                                       GaugeSizeUnit.factor,
-                                                )
-                                              ],
-                                              annotations: <GaugeAnnotation>[
-                                                GaugeAnnotation(
-                                                  positionFactor: 0.1,
-                                                  angle: 90,
-                                                  widget: Padding(
-                                                    padding: EdgeInsets.only(
-                                                        top: 15),
-                                                    child: Text("80%",
+                                                ),
+                                                pointers: <GaugePointer>[
+                                                  RangePointer(
+                                                    value: weatherController
+                                                        .weather.value.humidity
+                                                        .toDouble(), // Set the humidity value dynamically
+                                                    width: 0.15,
+                                                    color: Colors.white,
+                                                    pointerOffset: 0.1,
+                                                    cornerStyle:
+                                                        CornerStyle.bothCurve,
+                                                    sizeUnit:
+                                                        GaugeSizeUnit.factor,
+                                                  ),
+                                                ],
+                                                annotations: <GaugeAnnotation>[
+                                                  GaugeAnnotation(
+                                                    positionFactor: 0.1,
+                                                    angle: 90,
+                                                    widget: Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                              top: 15),
+                                                      child: Text(
+                                                        "${weatherController.weather.value.humidity}%", // Display fetched humidity
                                                         style: TextStyle(
                                                           color: Colors.white,
                                                           fontWeight:
@@ -648,17 +775,19 @@ class _MyHomePageState extends State<MyHomePage> {
                                                               GoogleFonts
                                                                       .poppins()
                                                                   .fontFamily,
-                                                        )),
+                                                        ),
+                                                      ),
+                                                    ),
                                                   ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
+                                                ],
+                                              ),
+                                            ],
+                                          );
+                                        }),
                                       ),
                                       const SizedBox(height: 10),
                                       Text(
-                                        "Water Level",
+                                        "Humidity",
                                         style: TextStyle(
                                           color: Colors.black,
                                           fontSize: 15,
@@ -677,64 +806,65 @@ class _MyHomePageState extends State<MyHomePage> {
                       ],
                     ),
                   ),
-                ),
+                ),*/
+
                 const SizedBox(height: 20),
-                Container(
-                  decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.all(Radius.circular(15))),
-                  child: Padding(
-                    padding: const EdgeInsets.all(9.0),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.solar_power,
-                          color: Colors.black,
-                          size: 20,
-                        ),
-                        const SizedBox(
-                          width: 10,
-                        ),
-                        Text(
-                          "Solar Status",
-                          style: TextStyle(
-                            color: Colors.black,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
-                            fontFamily: GoogleFonts.poppins().fontFamily,
+                Center(
+
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(10,5,10,5),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.solar_power,
+                                color: Colors.black,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                "Solar Status",
+                                style: TextStyle(
+                                  color: Colors.black,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                  fontFamily: GoogleFonts.poppins().fontFamily,
+                                ),
+                              ),
+                              const SizedBox(width: 50),
+                              ToggleSwitch(
+                                activeBgColor: [Colors.indigo],
+                                initialLabelIndex: _isSolarOn ? 0 : 1,
+                                totalSwitches: 2,
+                                labels: const ['Yes', 'No'],
+                                onToggle: (index) {
+                                  setState(() {
+                                    _isSolarOn = index == 0;
+                                  });
+                                },
+                              ),
+                            ],
                           ),
-                        ),
-                        const SizedBox(
-                          width: 50,
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.start,
-                          children: [
-                            const SizedBox(
-                              width: 25,
-                            ),
-                            ToggleSwitch(
-                              activeBgColor:  [Colors.indigo],
-                              initialLabelIndex: 0,
-                              totalSwitches: 2,
-                              labels: const [
-                                'Yes',
-                                'No',
-                              ],
-                              onToggle: (index) {
-                                print('switched to: $index');
-                              },
-                            ),
-                          ],
-                        ),
-                      ],
+                          const SizedBox(height: 20),
+                          _isSolarOn
+                              ? Image.asset(
+                                  'images/solar_day.png',
+                                  width: 200,
+                                  height: 200,
+                                ) // Replace with your image path
+                              : Image.asset(
+                                  'images/solar_night.png', width: 200,
+                            height: 200,), // Replace with your image path
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(
-                  height: 25,
-                ),
 
+                const SizedBox(
+                  height: 5,
+                ),
               ],
             ),
           ),

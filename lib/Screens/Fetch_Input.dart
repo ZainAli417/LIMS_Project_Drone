@@ -42,6 +42,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
   // Stop = 0
   late BitmapDescriptor ugv_active;
   late BitmapDescriptor ugv_dead;
+  @override
 
   @override
   void initState() {
@@ -58,11 +59,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     _loadCarIcons();
   }
 
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    super.dispose();
-  }
 
   LatLng _currentPosition = LatLng(0, 0); // Default position
   late DatabaseReference _latRef;
@@ -93,7 +89,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
   Set<Polygon> polygons = {};
   List<LatLng> _dronepath = [];
   late LatLng? selectedMarker =
-  _markers.isNotEmpty ? _markers.first.position : null;
+      _markers.isNotEmpty ? _markers.first.position : null;
   late GoogleMapController _googleMapController;
   final DatabaseReference _databaseReference = FirebaseDatabase.instance.ref();
   Timer? _movementTimer;
@@ -101,7 +97,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
   double _remainingDistanceKM_TotalPath = 0.0;
   List<LatLng> polygonPoints = [];
   double pathWidth = 10.0;
-
+late bool _isShapeClosed= false;
   void _updateValueInDatabase(int value) async {
     try {
       await _databaseReference.child('Direction').set(value);
@@ -243,7 +239,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
         double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
         segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
         double segmentProgress =
-        (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+            (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
         _carPosition = _lerpLatLng(start, end, segmentProgress);
 
         bool isSelectedSegment = _isSegmentSelected(path, _currentPointIndex);
@@ -274,7 +270,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
         });
         setState(() {
           _markers.removeWhere(
-                  (marker) => marker.markerId == const MarkerId('car'));
+              (marker) => marker.markerId == const MarkerId('car'));
           _addCarMarker(isSelectedSegment);
           if (segmentProgress >= 1.0) {
             _currentPointIndex++;
@@ -313,11 +309,11 @@ class _Fetch_InputState extends State<Fetch_Input> {
     ugv_active = await BitmapDescriptor.fromAssetImage(
       imageConfiguration,
 
-      'images/ugv_active.png', // Replace with your actual asset path
+      'images/ugv_dead.png', // Replace with your actual asset path
     );
     ugv_dead = await BitmapDescriptor.fromAssetImage(
       imageConfiguration,
-      'images/ugv_dead.png', // Replace with your actual asset path
+      'images/ugv_active.png', // Replace with your actual asset path
     );
   }
 
@@ -399,7 +395,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         },
                       ),
                     ),
-
                     Row(
                       children: [
                         ElevatedButton(
@@ -409,12 +404,11 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               borderRadius: BorderRadius.circular(10),
                             ),
                           ),
-
                           onPressed: () {
                             setState(() {
                               selectedSegments = List.generate(
                                 (_dronepath.length - 1) ~/ 2,
-                                    (i) => i,
+                                (i) => i,
                               );
                             });
                           },
@@ -447,7 +441,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               );
                               selectedPaths.add(segment);
                               double segmentDistance =
-                              calculate_selcted_segemnt_distance(segment);
+                                  calculate_selcted_segemnt_distance(segment);
                               totalDistance += segmentDistance;
                             }
                             _totalDistanceKM =
@@ -580,8 +574,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     });
   }*/
 
-  void dronepath_Horizontal(
-      List<LatLng> polygon, double pathWidth, LatLng startPoint) {
+  void dronepath_Horizontal(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
 
     // Sort points to get bounds
@@ -641,8 +634,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
     // Generate the path upwards as well (from startLat to minLat)
     List<LatLng> upwardPath = [];
     for (double lat = startLat - latIncrement;
-    lat >= minLat;
-    lat -= latIncrement) {
+        lat >= minLat;
+        lat -= latIncrement) {
       List<LatLng> intersections = [];
 
       // Find intersections for this latitude with polygon edges
@@ -695,8 +688,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     });
   }
 
-  void dronepath_Vertical(
-      List<LatLng> polygon, double pathWidth, LatLng startPoint) {
+  void dronepath_Vertical(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
 
     List<LatLng> sortedPoints = List.from(polygon);
@@ -740,8 +732,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     // Generate path from the starting point to the left
     for (double lng = startLng - lngIncrement;
-    lng >= minLng;
-    lng -= lngIncrement) {
+        lng >= minLng;
+        lng -= lngIncrement) {
       List<LatLng> intersections = [];
       for (int i = 0; i < polygon.length; i++) {
         LatLng p1 = polygon[i];
@@ -868,8 +860,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                     value: selectedMarker,
                     isExpanded: true,
                     items: (_isCustomMode
-                        ? _markers.sublist(0, _markers.length)
-                        : _markers.sublist(0, _markers.length - 1))
+                            ? _markers.sublist(0, _markers.length)
+                            : _markers.sublist(0, _markers.length - 1))
                         .map((marker) {
                       return DropdownMenuItem<LatLng>(
                         value: marker.position,
@@ -1133,7 +1125,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
   Future<void> _showFileSelectionPopup() async {
     List<String> localFiles = await _getAssetFiles(); // Get list of local files
     List<String> cloudFiles =
-    await _fetchCloudFiles(); // Get list of cloud files
+        await _fetchCloudFiles(); // Get list of cloud files
 
     String? selectedLocalFile; // To hold the selected local file
     String? selectedCloudFile; // To hold the selected cloud file
@@ -1160,24 +1152,25 @@ class _Fetch_InputState extends State<Fetch_Input> {
                 children: <Widget>[
                   Center(
                       child: Row(
-                        children: [
-                          Text(
-                            'Select files from Local',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.indigo[800],
-                            ),
-                          ),
-                          const SizedBox(width: 5), // add some space between the text and the icon
-                          Image.asset(
-                            'images/mobile.png', // replace with your image asset path
-                            width: 40, // adjust the width to your liking
-                            height: 40, // adjust the height to your liking
-                          ),
-                        ],
-                      )
-                  ),
+                    children: [
+                      Text(
+                        'Select files from Local',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.indigo[800],
+                        ),
+                      ),
+                      const SizedBox(
+                          width:
+                              5), // add some space between the text and the icon
+                      Image.asset(
+                        'images/mobile.png', // replace with your image asset path
+                        width: 40, // adjust the width to your liking
+                        height: 40, // adjust the height to your liking
+                      ),
+                    ],
+                  )),
                   DropdownButton<String>(
                     hint: Text(
                       'Choose File',
@@ -1187,7 +1180,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         color: Colors.black45,
                       ),
                     ),
-
                     value: selectedLocalFile,
                     isExpanded: true,
                     onChanged: (String? newValue) {
@@ -1196,7 +1188,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       });
                     },
                     items:
-                    localFiles.map<DropdownMenuItem<String>>((String file) {
+                        localFiles.map<DropdownMenuItem<String>>((String file) {
                       return DropdownMenuItem<String>(
                         value: file,
                         child: Text(file),
@@ -1206,24 +1198,25 @@ class _Fetch_InputState extends State<Fetch_Input> {
                   const SizedBox(height: 20),
                   Center(
                       child: Row(
-                        children: [
-                          Text(
-                            'Select files from Cloud',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.indigo[800],
-                            ),
-                          ),
-                          const SizedBox(width: 5), // add some space between the text and the icon
-                          Image.asset(
-                            'images/cloud.png', // replace with your image asset path
-                            width: 40, // adjust the width to your liking
-                            height: 40, // adjust the height to your liking
-                          ),
-                        ],
-                      )
-                  ),
+                    children: [
+                      Text(
+                        'Select files from Cloud',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.indigo[800],
+                        ),
+                      ),
+                      const SizedBox(
+                          width:
+                              5), // add some space between the text and the icon
+                      Image.asset(
+                        'images/cloud.png', // replace with your image asset path
+                        width: 40, // adjust the width to your liking
+                        height: 40, // adjust the height to your liking
+                      ),
+                    ],
+                  )),
                   DropdownButton<String>(
                     hint: Text(
                       'Choose File',
@@ -1241,7 +1234,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       });
                     },
                     items:
-                    cloudFiles.map<DropdownMenuItem<String>>((String file) {
+                        cloudFiles.map<DropdownMenuItem<String>>((String file) {
                       return DropdownMenuItem<String>(
                         value: file,
                         child: Text(file),
@@ -1343,11 +1336,12 @@ class _Fetch_InputState extends State<Fetch_Input> {
         setState(() {
           _updatePolylines();
           _updateRouteData();
-          Selecting_Path_Direction_and_Turn();
+          animateToFirstMarker();
+
+//          Selecting_Path_Direction_and_Turn(); //Confirm  button Wdget should be shown and triger only isnted of this funtion ;
         });
 
         // Animate the camera to the first marker after loading markers
-        animateToFirstMarker();
       } else {
         print('Error fetching cloud file: ${response.statusCode}');
       }
@@ -1355,6 +1349,11 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error loading markers from cloud file: $e');
     }
   }
+//Widget to make a button which will trigger the functions SELECTING_PATH_AND_DIRECTION()
+
+
+
+
 
   Future<void> _loadMarkersFromFile(String fileName) async {
     final contents = await rootBundle.loadString(fileName);
@@ -1375,7 +1374,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
           markerId: markerId,
           position: latLng,
           icon:
-          BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
         );
 
         _markers.add(newMarker);
@@ -1386,12 +1385,17 @@ class _Fetch_InputState extends State<Fetch_Input> {
     setState(() {
       _updatePolylines();
       _updateRouteData();
-      Selecting_Path_Direction_and_Turn(); // Call the function if the shape is closed
+     // Selecting_Path_Direction_and_Turn(); //Confirm  button Wdget should be shown and triger only isnted of this funtion ;
     });
 
     // Animate the camera to the first marker after loading markers
     animateToFirstMarker();
   }
+
+
+
+
+
 
 // Function to fetch files from Firebase Storag
   Future<List<String>> _fetchCloudFiles() async {
@@ -1429,7 +1433,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
         CameraUpdate.newCameraPosition(
           CameraPosition(
             target: _markerPositions.first, // Animate to first marker position
-            zoom: 25.0,
+            zoom: 20.0,
           ),
         ),
       );
@@ -1463,7 +1467,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
         ),
         flexibleSpace: Padding(
           padding:
-          const EdgeInsets.only(top: 40.0), // Padding to control spacing
+              const EdgeInsets.only(top: 40.0), // Padding to control spacing
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -1509,8 +1513,14 @@ class _Fetch_InputState extends State<Fetch_Input> {
                 ),
               ),
             ),
-            Center(
-              child: Column(
+
+      Stack(
+
+        children: [
+
+          Center(
+
+            child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Row(
@@ -1665,8 +1675,37 @@ class _Fetch_InputState extends State<Fetch_Input> {
                     ],
                   ),
                 ],
-              ),
+
             ),
+
+          ),
+
+          Positioned(
+
+            right: 16,
+
+            bottom: 16,
+
+            child: FloatingActionButton(
+backgroundColor: Colors.white,
+              elevation: 8,
+              onPressed: () {
+
+                _showInputSelectionPopup();
+
+              },
+
+              child: Image.asset('images/controll.png',width: 60,height: 60,), // Replace with your custom icon image
+            ),
+
+          ),
+
+        ],
+
+      ),
+
+
+
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
@@ -1738,53 +1777,53 @@ class _Fetch_InputState extends State<Fetch_Input> {
                     _currentLocation == null
                         ? const Center(child: CircularProgressIndicator())
                         : GoogleMap(
-                      initialCameraPosition: _currentLocation != null
-                          ? CameraPosition(
-                        target: LatLng(
-                          _currentLocation!.latitude!,
-                          _currentLocation!.longitude!,
-                        ),
-                        zoom: 15.0,
-                      )
-                          : const CameraPosition(
-                        target: LatLng(
-                            0, 0), // Default fallback position
-                        zoom: 2.0, // Low zoom for global view
-                      ),
-                      markers: {
-                        ..._markers,
-                        if (_currentPosition != null)
-                          Marker(
-                            markerId: const MarkerId('currentLocation'),
-                            position: _currentPosition,
-                            icon: BitmapDescriptor.defaultMarkerWithHue(
-                                BitmapDescriptor.hueViolet),
+                            initialCameraPosition: _currentLocation != null
+                                ? CameraPosition(
+                                    target: LatLng(
+                                      _currentLocation!.latitude!,
+                                      _currentLocation!.longitude!,
+                                    ),
+                                    zoom: 15.0,
+                                  )
+                                : const CameraPosition(
+                                    target: LatLng(
+                                        0, 0), // Default fallback position
+                                    zoom: 2.0, // Low zoom for global view
+                                  ),
+                            markers: {
+                              ..._markers,
+                              if (_currentPosition != null)
+                                Marker(
+                                  markerId: const MarkerId('currentLocation'),
+                                  position: _currentPosition,
+                                  icon: BitmapDescriptor.defaultMarkerWithHue(
+                                      BitmapDescriptor.hueViolet),
+                                ),
+                            },
+                            polylines: _polylines,
+                            polygons: polygons,
+                            zoomGesturesEnabled: true,
+                            rotateGesturesEnabled: true,
+                            buildingsEnabled: true,
+                            scrollGesturesEnabled: true,
+                            onTap: _isCustomMode ? _onMapTap : null,
+                            onMapCreated: (controller) {
+                              _googleMapController = controller;
+                              // Camera animation is now handled separately.
+                            },
+                            gestureRecognizers: <Factory<
+                                OneSequenceGestureRecognizer>>{
+                              Factory<OneSequenceGestureRecognizer>(
+                                  () => EagerGestureRecognizer()),
+                            },
+                            myLocationEnabled: true,
+                            myLocationButtonEnabled: true,
                           ),
-                      },
-                      polylines: _polylines,
-                      polygons: polygons,
-                      zoomGesturesEnabled: true,
-                      rotateGesturesEnabled: true,
-                      buildingsEnabled: true,
-                      scrollGesturesEnabled: true,
-                      onTap: _isCustomMode ? _onMapTap : null,
-                      onMapCreated: (controller) {
-                        _googleMapController = controller;
-                        // Camera animation is now handled separately.
-                      },
-                      gestureRecognizers: <Factory<
-                          OneSequenceGestureRecognizer>>{
-                        Factory<OneSequenceGestureRecognizer>(
-                                () => EagerGestureRecognizer()),
-                      },
-                      myLocationEnabled: true,
-                      myLocationButtonEnabled: true,
-                    ),
                     Padding(
                       padding: const EdgeInsets.all(8.0),
                       child: ClipRRect(
                         borderRadius:
-                        BorderRadius.circular(30.0), // Capsule shape
+                            BorderRadius.circular(30.0), // Capsule shape
                         child: Container(
                           decoration: const BoxDecoration(
                             color: Colors.white,
@@ -1793,7 +1832,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                             textFieldConfiguration: TextFieldConfiguration(
                               focusNode: _focusNode,
                               autofocus: false,
-                              style:  TextStyle(
+                              style: TextStyle(
                                 fontFamily: GoogleFonts.poppins().fontFamily,
 
                                 fontSize: 15.0, // Customize font size
@@ -1813,42 +1852,43 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 suffixIcon: IconButton(
                                   icon: const Icon(Icons.search,
                                       color:
-                                      Colors.black), // Customize icon color
+                                          Colors.black), // Customize icon color
                                   onPressed:
-                                  _hideKeyboard, // Hide keyboard on search button press
+                                      _hideKeyboard, // Hide keyboard on search button press
                                 ),
                                 contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16.0, vertical: 12.0),
                               ),
                             ),
                             suggestionsCallback: (pattern) {
-                              if (pattern.isEmpty)
+                              if (pattern.isEmpty) {
                                 return Future.value(<geocoding.Placemark>[]);
+                              }
                               _debounce?.cancel();
                               final completer =
-                              Completer<List<geocoding.Placemark>>();
+                                  Completer<List<geocoding.Placemark>>();
                               _debounce = Timer(const Duration(microseconds: 1),
-                                      () async {
-                                    List<geocoding.Placemark> placemarks = [];
-                                    try {
-                                      List<geocoding.Location> locations =
+                                  () async {
+                                List<geocoding.Placemark> placemarks = [];
+                                try {
+                                  List<geocoding.Location> locations =
                                       await geocoding
                                           .locationFromAddress(pattern);
-                                      if (locations.isNotEmpty) {
-                                        placemarks = await Future.wait(
-                                          locations.map((location) =>
-                                              geocoding.placemarkFromCoordinates(
-                                                location.latitude,
-                                                location.longitude,
-                                              )),
-                                        ).then((results) =>
-                                            results.expand((x) => x).toList());
-                                      }
-                                    } catch (e) {
-                                      // Handle error if needed
-                                    }
-                                    completer.complete(placemarks);
-                                  });
+                                  if (locations.isNotEmpty) {
+                                    placemarks = await Future.wait(
+                                      locations.map((location) =>
+                                          geocoding.placemarkFromCoordinates(
+                                            location.latitude,
+                                            location.longitude,
+                                          )),
+                                    ).then((results) =>
+                                        results.expand((x) => x).toList());
+                                  }
+                                } catch (e) {
+                                  // Handle error if needed
+                                }
+                                completer.complete(placemarks);
+                              });
                               return completer.future;
                             },
                             itemBuilder:
@@ -1856,26 +1896,28 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               return ListTile(
                                 leading: const Icon(Icons.location_on,
                                     color:
-                                    Colors.green), // Customize icon color
+                                        Colors.green), // Customize icon color
                                 title: Text(
                                   suggestion.name ??
                                       'No Country/City Available',
-                                  style:  TextStyle(
-                                    fontFamily: GoogleFonts.poppins().fontFamily,
+                                  style: TextStyle(
+                                    fontFamily:
+                                        GoogleFonts.poppins().fontFamily,
                                     fontSize: 16.0,
                                     fontWeight:
-                                    FontWeight.w400, // Customize font size
+                                        FontWeight.w400, // Customize font size
                                     color: Colors.black, // Customize text color
                                   ),
                                 ),
                                 subtitle: Text(
                                   suggestion.locality ?? 'No locality Exists',
-                                  style:  TextStyle(
-                                    fontFamily: GoogleFonts.poppins().fontFamily,
+                                  style: TextStyle(
+                                    fontFamily:
+                                        GoogleFonts.poppins().fontFamily,
 
                                     fontSize: 14.0, // Customize font size
                                     color:
-                                    Colors.black54, // Customize text color
+                                        Colors.black54, // Customize text color
                                   ),
                                 ),
                               );
@@ -1886,8 +1928,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                   '${suggestion.name ?? ''}, ${suggestion.locality ?? ''}';
                               try {
                                 List<geocoding.Location> locations =
-                                await geocoding
-                                    .locationFromAddress(address);
+                                    await geocoding
+                                        .locationFromAddress(address);
                                 if (locations.isNotEmpty) {
                                   final location = locations.first;
 
@@ -1909,6 +1951,32 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         ),
                       ),
                     ),
+
+                    if (_isShapeClosed) // Conditionally show the button
+                      Positioned(
+                        top: 75,
+                        left: 160,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green[700],
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          onPressed: () {
+                            Selecting_Path_Direction_and_Turn(); // Call your function
+                          },
+                          child: Text(
+                            'Confirm Field',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+
                     if (polygons.isNotEmpty)
                       Positioned(
                         top: 70,
@@ -2045,7 +2113,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
   void _updatePolylines() {
     _polylines.clear();
+
     if (_markerPositions.length > 1) {
+      // Draw the polylines connecting the markers
       for (int i = 0; i < _markerPositions.length - 1; i++) {
         _polylines.add(Polyline(
           polylineId: PolylineId('route$i'),
@@ -2054,8 +2124,24 @@ class _Fetch_InputState extends State<Fetch_Input> {
           width: 3,
         ));
       }
+
+      // Check if the shape is closed by comparing the first and last marker positions
+      if (_markerPositions.first == _markerPositions.last) {
+        setState(() {
+          _isShapeClosed = true; // Set the boolean to true if the shape is closed
+        });
+      } else {
+        setState(() {
+          _isShapeClosed = false; // Set to false if the shape is not closed
+        });
+      }
+    } else {
+      setState(() {
+        _isShapeClosed = false; // If fewer than 2 markers, the shape cannot be closed
+      });
     }
   }
+
 
   void _onMapTap(LatLng latLng) {
     final markerId = MarkerId('M${_markers.length + 1}');
@@ -2263,4 +2349,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     return areaInAcres;
   }*/
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
 }

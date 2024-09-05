@@ -1,6 +1,8 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:project_drone/Screens/Fetch_Input.dart';
+import 'package:project_drone/Screens/LoginScreen.dart';
 import 'package:toggle_switch/toggle_switch.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -109,7 +111,7 @@ class _MyHomePageState extends State<MyHomePage> {
           toolbarHeight: 160, // Custom height for the AppBar
           flexibleSpace: Padding(
             padding: const EdgeInsets.fromLTRB(
-                15, 50, 10, 0), // Padding to control spacing
+                10, 50, 10, 0), // Padding to control spacing
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -118,7 +120,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   decoration: BoxDecoration(
                     color: Colors.white, // Set the background color to white
                     borderRadius: BorderRadius.circular(
-                        25), // Make the background rounded (capsule effect)
+                        15), // Make the background rounded (capsule effect)
                     boxShadow: const [
                       BoxShadow(
                         color:
@@ -174,16 +176,50 @@ class _MyHomePageState extends State<MyHomePage> {
                           ),
                         ],
                       ),
-                      const Row(
-                        children: [
-                          Icon(
-                            Icons.notifications_active_outlined,
-                            color: Colors.black,
-                            size: 25,
-                          ), // Adjusted icon color
-                          SizedBox(width: 10),
-                        ],
-                      ),
+                       Row(
+                         children: [
+
+                              Row(
+                               mainAxisSize: MainAxisSize.min,
+                               children: [
+
+                                  Text(
+                                   'Sign out',
+                                   style: TextStyle(
+                                       color: Colors.black,
+                                       fontSize: 16,
+                                       fontWeight: FontWeight.w600,
+                                       fontFamily: GoogleFonts.poppins().fontFamily,
+                                   ),
+                                 ),
+                                 SizedBox(width: 2), // Reduced spacing between icon and text
+
+
+                                 IconButton(
+                                   icon: const Icon(
+                                     Icons.logout_outlined,
+                                     color: Colors.black,
+                                     size: 25,
+                                   ),
+                                   onPressed: () async {
+                                     try {
+                                       await FirebaseAuth.instance.signOut();
+                                       Navigator.pushReplacement(
+                                         context,
+                                         MaterialPageRoute(builder: (context) => LoginScreen()), // Adjust the navigation to your Login page
+                                       );
+                                     } catch (e) {
+                                       // Handle any errors that may occur during sign out
+                                       print('Error signing out: $e');
+                                     }
+                                   },
+                                 ),
+                               ],
+                             ),
+
+                         ],
+
+                       ),
                     ],
                   ),
                 ),
@@ -260,6 +296,9 @@ class _MyHomePageState extends State<MyHomePage> {
                         ),
                       ),
                     ),
+
+
+
                   ],
                 ),
               ],
@@ -335,7 +374,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
                       const SizedBox(height: 15), // Spacing between rows
 
-                      Row(
+                     /* Row(
                         children: [
                           Expanded(
                             child: Text(
@@ -350,7 +389,7 @@ class _MyHomePageState extends State<MyHomePage> {
                             ),
                           ),
                         ],
-                      ),
+                      ),*/
 
                       const SizedBox(height: 15), // Spacing between rows
 

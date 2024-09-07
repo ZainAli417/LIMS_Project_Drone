@@ -24,9 +24,10 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    splashProvider.startAnimations();
+    // Preload the images before rendering
     precacheImage(const AssetImage('images/bg.jpeg'), context);
     precacheImage(const AssetImage('images/logo.png'), context);
+    splashProvider.startAnimations();
   }
 
   @override
@@ -34,19 +35,19 @@ class _SplashScreenState extends State<SplashScreen>
     splashProvider.disposeControllers();
     super.dispose();
   }
-
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider<SplashProvider>(
       create: (_) => splashProvider,
       child: Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: Colors.black, // Temporary background color
         body: Stack(
           children: [
             Positioned.fill(
               child: Image.asset(
                 'images/bg.jpeg',
                 fit: BoxFit.cover,
+                key: const Key("bgImage"),
               ),
             ),
             Consumer<SplashProvider>(

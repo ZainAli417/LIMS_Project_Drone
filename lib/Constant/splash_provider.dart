@@ -10,7 +10,7 @@ class SplashProvider with ChangeNotifier {
   void initControllers(TickerProvider vsync) {
     logoController = AnimationController(
       vsync: vsync,
-      duration: const Duration(seconds: 2),
+      duration: const Duration(seconds: 1),
     );
 
     buttonController = AnimationController(
@@ -33,7 +33,7 @@ class SplashProvider with ChangeNotifier {
   }
 
   void startAnimations() {
-    Future.delayed(const Duration(seconds: 1), () {
+    Future.delayed(const Duration(seconds: 2), () {
       logoController.forward().whenComplete(() {
         buttonController.forward();
         notifyListeners();

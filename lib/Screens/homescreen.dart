@@ -1,5 +1,7 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:project_drone/Screens/Fetch_Input.dart';
 import 'package:project_drone/Screens/LoginScreen.dart';
@@ -31,9 +33,8 @@ class _MyHomePageState extends State<MyHomePage> {
   final WeatherController weatherController = Get.put(WeatherController());
   static const LatLng pGooglePlex = LatLng(33.5923397, 73.0476774);
   final videourl = "https://www.youtube.com/watch?v=WhAfZhFxHTs";
-  late YoutubePlayerController _controller;
+  //late YoutubePlayerController _controller;
   final DatabaseReference _dbRef = FirebaseDatabase.instance.ref();
-
   String area = '0.00';
   String totalDistance = '0.00';
   String remainingDistance = '0.00';
@@ -43,20 +44,56 @@ class _MyHomePageState extends State<MyHomePage> {
   String waterLevel = "80 %";
   String city = "N/A";
   String cityName = "N/A";
+  List<Map<String, dynamic>> _devices = [];
+  bool isManual = false; // Add this at the top of your widget
+
   bool _isSolarOn = true;
   @override
   void initState() {
     super.initState();
     _getPositionAndWeather();
     _fetchData();
-
+    getPosition();
+    _fetchDevices();
     final videoid = YoutubePlayer.convertUrlToId(videourl);
-    _controller = YoutubePlayerController(
+   /* _controller = YoutubePlayerController(
       initialVideoId: videoid!,
       flags: const YoutubePlayerFlags(
         autoPlay: false,
       ),
-    )..addListener(() {});
+    )..addListener(() {});*/
+  }
+
+  Map<String, dynamic>? _farmerData;
+
+  Future<void> _fetchDevices() async {
+    final FirebaseAuth _auth = FirebaseAuth.instance;
+    final User? user = _auth.currentUser;
+
+    // Ensure the user is logged in
+    if (user != null) {
+      try {
+        // Fetch farmer's document from Firestore
+        final DocumentSnapshot<Map<String, dynamic>> farmerDoc =
+            await FirebaseFirestore.instance
+                .collection('Farmer')
+                .doc(user.uid) // Use user.uid to fetch the document
+                .get();
+
+        // Check if document exists
+        if (farmerDoc.exists && farmerDoc.data() != null) {
+          setState(() {
+            _farmerData = farmerDoc.data(); // Store farmer's data
+            _devices = List<Map<String, dynamic>>.from(
+                _farmerData?['Purchased_Devices'] ?? []);
+          });
+        }
+      } catch (e) {
+        print('Error fetching devices: $e');
+      }
+    } else {
+      print('No user is currently logged in.');
+    }
   }
 
   Future<void> _getPositionAndWeather() async {
@@ -176,50 +213,49 @@ class _MyHomePageState extends State<MyHomePage> {
                           ),
                         ],
                       ),
-                       Row(
-                         children: [
+                      Row(
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Sign out',
+                                style: TextStyle(
+                                  color: Colors.black,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  fontFamily: GoogleFonts.poppins().fontFamily,
+                                ),
+                              ),
+                              SizedBox(
+                                  width:
+                                      2), // Reduced spacing between icon and text
 
-                              Row(
-                               mainAxisSize: MainAxisSize.min,
-                               children: [
-
-                                  Text(
-                                   'Sign out',
-                                   style: TextStyle(
-                                       color: Colors.black,
-                                       fontSize: 16,
-                                       fontWeight: FontWeight.w600,
-                                       fontFamily: GoogleFonts.poppins().fontFamily,
-                                   ),
-                                 ),
-                                 SizedBox(width: 2), // Reduced spacing between icon and text
-
-
-                                 IconButton(
-                                   icon: const Icon(
-                                     Icons.logout_outlined,
-                                     color: Colors.black,
-                                     size: 25,
-                                   ),
-                                   onPressed: () async {
-                                     try {
-                                       await FirebaseAuth.instance.signOut();
-                                       Navigator.pushReplacement(
-                                         context,
-                                         MaterialPageRoute(builder: (context) => LoginScreen()), // Adjust the navigation to your Login page
-                                       );
-                                     } catch (e) {
-                                       // Handle any errors that may occur during sign out
-                                       print('Error signing out: $e');
-                                     }
-                                   },
-                                 ),
-                               ],
-                             ),
-
-                         ],
-
-                       ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.logout_outlined,
+                                  color: Colors.black,
+                                  size: 25,
+                                ),
+                                onPressed: () async {
+                                  try {
+                                    await FirebaseAuth.instance.signOut();
+                                    Navigator.pushReplacement(
+                                      context,
+                                      MaterialPageRoute(
+                                          builder: (context) =>
+                                              LoginScreen()), // Adjust the navigation to your Login page
+                                    );
+                                  } catch (e) {
+                                    // Handle any errors that may occur during sign out
+                                    print('Error signing out: $e');
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -254,51 +290,49 @@ class _MyHomePageState extends State<MyHomePage> {
                       }),
                     ),
 
-                    // UGV Connected Section
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
-                      child: Container(
-                        padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
-                        width: 170,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.indigo[800],
-                          borderRadius:
-                              const BorderRadius.all(Radius.circular(5)),
-                        ),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors
-                                .white, // Set the background color to white
-                            borderRadius:
-                                BorderRadius.circular(10), // Rounded corners
-                          ),
-                          child: Row(
-                            children: [
-                              const CustomUGVIcon(), // Custom UGV connected icon
-                              const SizedBox(width: 7),
-                              Center(
-                                child: Text(
-                                  "UGV Connected ",
-                                  style: TextStyle(
-                                    color: Colors.indigo[
-                                        800], // Text color set to indigo
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                    fontFamily:
-                                        GoogleFonts.poppins().fontFamily,
-                                  ),
+                    _devices.isNotEmpty
+                        ? Padding(
+                            padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
+                            child: Container(
+                              padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
+                              width: 170,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: Colors.indigo[800],
+                                borderRadius:
+                                    const BorderRadius.all(Radius.circular(5)),
+                              ),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors
+                                      .white, // Set the background color to white
+                                  borderRadius: BorderRadius.circular(
+                                      10), // Rounded corners
+                                ),
+                                child: Row(
+                                  children: [
+                                    const CustomUGVIcon(), // Custom UGV connected icon
+                                    const SizedBox(width: 7),
+                                    Center(
+                                      child: Text(
+                                        "UGV Connected ",
+                                        style: TextStyle(
+                                          color: Colors.indigo[
+                                              800], // Text color set to indigo
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                          fontFamily:
+                                              GoogleFonts.poppins().fontFamily,
+                                        ),
+                                      ),
+                                    ),
+                                    const GreenBlinkingDot(), // Custom green blinking dot
+                                  ],
                                 ),
                               ),
-                              const GreenBlinkingDot(), // Custom green blinking dot
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-
-
-
+                            ),
+                          )
+                        : const SizedBox(), // Return an empty widget if not purchased
                   ],
                 ),
               ],
@@ -372,9 +406,9 @@ class _MyHomePageState extends State<MyHomePage> {
                         ],
                       ),
 
-                      const SizedBox(height: 15), // Spacing between rows
+                      const SizedBox(height: 5), // Spacing between rows
 
-                     /* Row(
+                      /* Row(
                         children: [
                           Expanded(
                             child: Text(
@@ -392,90 +426,181 @@ class _MyHomePageState extends State<MyHomePage> {
                       ),*/
 
                       const SizedBox(height: 15), // Spacing between rows
-
                       Expanded(
-                        child: GridView.count(
-                          crossAxisCount: 3,
-                          mainAxisSpacing: 10,
-                          crossAxisSpacing: 10,
+                        child: Column(
                           children: [
-                            Obx(() {
-                              return WeatherCard(
-                                icon: Icons.wind_power_outlined,
-                                label: 'Wind Speed',
-                                value:
-                                    '${weatherController.weather.value.windspeed.toStringAsFixed(1)} m/s',
-                                cardColor: Colors.teal,
-                                textColor: Colors.white,
-                              );
-                            }),
+                            // First GridView for Weather Cards
+                            Expanded(
+                              flex: 1,
+                              child: GridView.count(
+                                crossAxisCount: 3,
+                                mainAxisSpacing: 10,
+                                crossAxisSpacing: 10,
+                                childAspectRatio:
+                                    1, // Adjust aspect ratio as needed
+                                children: [
+                                  Obx(() {
+                                    return WeatherCard(
+                                      icon: Icons.wind_power_outlined,
+                                      label: 'Wind Speed',
+                                      value:
+                                          '${weatherController.weather.value.windspeed.toStringAsFixed(1)} m/s',
+                                      cardColor: Colors.teal,
+                                      textColor: Colors.white,
+                                    );
+                                  }),
+                                  Obx(() {
+                                    return WeatherCard(
+                                      icon: Icons.water_drop_outlined,
+                                      label: 'Water Level',
+                                      value:
+                                          '${weatherController.weather.value.humidity}%',
+                                      cardColor: Colors.blue,
+                                      textColor: Colors.white,
+                                    );
+                                  }),
+                                  Obx(() {
+                                    return WeatherCard(
+                                      icon: Icons.thermostat_auto_outlined,
+                                      label: 'Temperature',
+                                      value:
+                                          '${weatherController.weather.value.temp.toStringAsFixed(1)} °C',
+                                      cardColor: Colors.purple,
+                                      textColor: Colors.white,
+                                    );
+                                  }),
+                                ],
+                              ),
+                            ),
 
-                            Obx(() {
-                              return WeatherCard(
-                                icon: Icons.water_drop_outlined,
-                                label: 'Water Level',
-                                value:
-                                    '${weatherController.weather.value.humidity}%',
-                                cardColor: Colors.blue,
-                                textColor: Colors.white,
-                              );
-                            }),
-
-                            Obx(() {
-                              return WeatherCard(
-                                icon: Icons.thermostat_auto_outlined,
-                                label: 'Temperature',
-                                value:
-                                    '${weatherController.weather.value.temp.toStringAsFixed(1)} °C',
-                                cardColor: Colors.purple,
-                                textColor: Colors.white,
-                              );
-                            }),
-
-                            // Widget spanning two columns
-
-                            GestureDetector(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        Fetch_Input(controller: _controller),
+                            // Row with Text and Icon
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(5, 10, 5, 5),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.start,
+                                children: [
+                                  Image.asset(
+                                    'images/mode.jpeg', // Path to your SVG file
+                                    height: 25,
+                                    width: 25,
                                   ),
-                                );
-                              },
-                              child: Card(
-                                elevation: 8,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(15),
-                                ),
-                                color: Colors.white,
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Image.asset(
-                                      'images/controll.png', // Replace with your image path
-                                      height: 85,
-                                      width: 100,
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    "Control Mode",
+                                    style: TextStyle(
+                                      color: Colors.black,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 17,
+                                      fontFamily:
+                                          GoogleFonts.poppins().fontFamily,
                                     ),
-                                    const SizedBox(height: 5),
-                                    Text(
-                                      'Smart Controller',
-                                      style: TextStyle(
-                                        color: Colors.indigo,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
-                                        fontFamily:
-                                            GoogleFonts.poppins().fontFamily,
+                                  ),
+                                ],
+                              ),
+                            ),
+
+// Second GridView for Control Mode Cards
+                            Expanded(
+                              flex: 1,
+                              child: GridView.count(
+                                crossAxisCount: 3,
+                                mainAxisSpacing: 20,
+                                crossAxisSpacing: 10,
+                                childAspectRatio:
+                                    1, // Adjust as needed to make cards look balanced
+                                children: [
+                                  GestureDetector(
+                                    onTap: () {
+                                      isManual = false; // Autonomous mode
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => Fetch_Input(
+                                              //controller: _controller,
+                                              isManualControl: isManual),
+                                        ),
+                                      );
+                                    },
+                                    child: Card(
+                                      margin: EdgeInsets.fromLTRB(1, 1, 1, 1),
+                                      elevation: 8,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                      ),
+                                      color: Colors.white,
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Image.asset(
+                                            'images/auto.jpg', // Replace with your image path
+                                            height: 85,
+                                            width: 100,
+                                          ),
+                                          const SizedBox(height: 5),
+                                          Text(
+                                            'Autonomous',
+                                            style: TextStyle(
+                                              color: Colors.indigo,
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                              fontFamily: GoogleFonts.poppins()
+                                                  .fontFamily,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  GestureDetector(
+                                    onTap: () {
+                                      isManual = true; // Manual mode
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => Fetch_Input(
+                                             // controller: _controller,
+                                              isManualControl: isManual),
+                                        ),
+                                      );
+                                    },
+                                    child: Card(
+                                      margin: EdgeInsets.fromLTRB(1, 2, 1, 2),
+                                      elevation: 8,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                      ),
+                                      color: Colors.white,
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Image.asset(
+                                            'images/manual.jpg', // Replace with your image path
+                                            height: 85,
+                                            width: 100,
+                                          ),
+                                          Text(
+                                            'Manual',
+                                            style: TextStyle(
+                                              color: Colors.indigo,
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                              fontFamily: GoogleFonts.poppins()
+                                                  .fontFamily,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
                       ),
+
                       Row(
                         // First Row
 
@@ -849,58 +974,58 @@ class _MyHomePageState extends State<MyHomePage> {
 
                 const SizedBox(height: 20),
                 Center(
-
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(10,5,10,5),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.solar_power,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 5, 10, 5),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.solar_power,
+                              color: Colors.black,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              "Solar Status",
+                              style: TextStyle(
                                 color: Colors.black,
-                                size: 20,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                                fontFamily: GoogleFonts.poppins().fontFamily,
                               ),
-                              const SizedBox(width: 10),
-                              Text(
-                                "Solar Status",
-                                style: TextStyle(
-                                  color: Colors.black,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 15,
-                                  fontFamily: GoogleFonts.poppins().fontFamily,
-                                ),
-                              ),
-                              const SizedBox(width: 50),
-                              ToggleSwitch(
-                                activeBgColor: [Colors.indigo],
-                                initialLabelIndex: _isSolarOn ? 0 : 1,
-                                totalSwitches: 2,
-                                labels: const ['Yes', 'No'],
-                                onToggle: (index) {
-                                  setState(() {
-                                    _isSolarOn = index == 0;
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          _isSolarOn
-                              ? Image.asset(
-                                  'images/solar_day.png',
-                                  width: 200,
-                                  height: 200,
-                                ) // Replace with your image path
-                              : Image.asset(
-                                  'images/solar_night.png', width: 200,
-                            height: 200,), // Replace with your image path
-                        ],
-                      ),
+                            ),
+                            const SizedBox(width: 50),
+                            ToggleSwitch(
+                              activeBgColor: [Colors.indigo],
+                              initialLabelIndex: _isSolarOn ? 0 : 1,
+                              totalSwitches: 2,
+                              labels: const ['Yes', 'No'],
+                              onToggle: (index) {
+                                setState(() {
+                                  _isSolarOn = index == 0;
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        _isSolarOn
+                            ? Image.asset(
+                                'images/solar_day.png',
+                                width: 200,
+                                height: 200,
+                              ) // Replace with your image path
+                            : Image.asset(
+                                'images/solar_night.png',
+                                width: 200,
+                                height: 200,
+                              ), // Replace with your image path
+                      ],
                     ),
                   ),
-
+                ),
                 const SizedBox(
                   height: 5,
                 ),

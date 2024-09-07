@@ -124,7 +124,7 @@ class _MapPageState extends State<MapPage> {
                   print('pressed]');
                 },
                 child: GoogleMap(
-                  initialCameraPosition: CameraPosition(
+                  initialCameraPosition: const CameraPosition(
                     target: pGooglePlex,
                     zoom: 10,
                   ),

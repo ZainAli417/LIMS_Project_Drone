@@ -4,9 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart'; // Add Firestore package
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-
-import 'Fetch_Input.dart';
-import 'SaaS.dart';
 import 'homescreen.dart';
 
 class DeviceSelection extends StatefulWidget {
@@ -181,7 +178,7 @@ class _DeviceSelectionState extends State<DeviceSelection>
                                       color: Color(0xFF037441),
                                     ),
                                     children: const [
-                                      TextSpan(text: "You Have Purchased the Following Devices"),
+                                      TextSpan(text: "The following LIMS devices are registered with this account"),
                                     ],
                                   ),
                                 ),
@@ -336,7 +333,7 @@ class _DeviceSelectionState extends State<DeviceSelection>
                               onPressed: () {
                                 Navigator.push(
                                   context,
-                                  MaterialPageRoute(builder: (context) => SaaS_Home()), // Adjust the navigation as needed
+                                  MaterialPageRoute(builder: (context) => MyHomePage()), // Adjust the navigation as needed
                                 );
                               },
                               style: ElevatedButton.styleFrom(

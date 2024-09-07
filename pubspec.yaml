@@ -50,3 +50,5 @@ flutter:
 
   assets:
     - images/
+    - images/logo.png
+    - images/bg.jpeg

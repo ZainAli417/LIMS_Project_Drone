@@ -4,12 +4,15 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter_svg/svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:project_drone/Screens/homescreen.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -25,8 +28,11 @@ import 'package:http/http.dart' as http;
 enum PathDirection { horizontal, vertical }
 
 class Fetch_Input extends StatefulWidget {
-  final YoutubePlayerController controller;
-  const Fetch_Input({Key? key, required this.controller}) : super(key: key);
+  // final YoutubePlayerController controller;
+  final bool isManualControl; // Accept the boolean parameter
+  const Fetch_Input(
+      {Key? key, /*required this.controller*/ required this.isManualControl})
+      : super(key: key);
   @override
   _Fetch_InputState createState() => _Fetch_InputState();
 }
@@ -43,8 +49,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
   late BitmapDescriptor ugv_active;
   late BitmapDescriptor ugv_dead;
   @override
-
-  @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -59,6 +63,11 @@ class _Fetch_InputState extends State<Fetch_Input> {
     _loadCarIcons();
   }
 
+  void dispose() {
+    _debounce?.cancel();
+    _movementTimer?.cancel(); // Add this line
+    super.dispose();
+  }
 
   LatLng _currentPosition = LatLng(0, 0); // Default position
   late DatabaseReference _latRef;
@@ -81,6 +90,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
   final Location _location = Location();
   LocationData? _currentLocation;
   bool _isMoving = false;
+  bool _isConfirmed = false;
+  bool _ismanual = false;
   late LatLng _carPosition;
   int _currentPointIndex = 0;
   late List<Marker> _markers = [];
@@ -88,16 +99,31 @@ class _Fetch_InputState extends State<Fetch_Input> {
   Set<Polyline> _polylines = {};
   Set<Polygon> polygons = {};
   List<LatLng> _dronepath = [];
+  double pathWidth = 10.0;
+bool _isHorizontalDirection=false;
   late LatLng? selectedMarker =
-      _markers.isNotEmpty ? _markers.first.position : null;
+  _markers.isNotEmpty ? _markers.first.position : null;
+
   late GoogleMapController _googleMapController;
   final DatabaseReference _databaseReference = FirebaseDatabase.instance.ref();
   Timer? _movementTimer;
   bool _isCustomMode = false;
+  bool _isShapeClosed = false;
   double _remainingDistanceKM_TotalPath = 0.0;
   List<LatLng> polygonPoints = [];
-  double pathWidth = 10.0;
-late bool _isShapeClosed= false;
+
+  //USER SELECTION RECEIPT
+
+  String _selectedMethod = 'N/A'; // Variable to store selected method
+  String? _selectedFileSource =
+      'N/A in Manual Mode'; // To store the file source (Local or Cloud)
+  String? _selectedLocalFile =
+      'N/A in Manual Mode'; // To store the selected local file
+  String? _selectedCloudFile =
+      'N/A in Manual Mode'; // To store the selected cloud file
+  double _turnLength = 5.0; // To store turn length
+  LatLng? _selectedStartingPoint; // To store the selected starting point
+
   void _updateValueInDatabase(int value) async {
     try {
       await _databaseReference.child('Direction').set(value);
@@ -105,7 +131,6 @@ late bool _isShapeClosed= false;
       print('Error updating value in database: $e');
     }
   }
-
   void _updateValueInDatabaseOnRelease() async {
     try {
       await _databaseReference.child('Direction').set(0);
@@ -113,25 +138,15 @@ late bool _isShapeClosed= false;
       print('Error updating value in database: $e');
     }
   }
-
   void _resetMarkers() async {
     setState(() {
-      _markers
-          .removeWhere((marker) => marker.markerId == const MarkerId('car'));
+      // Reset to default values
+
+      // Reset other variables and clear data
       _isMoving = false;
-      _currentPointIndex = 0;
-      _movementTimer?.cancel();
-      _markers.clear();
-      _markerPositions.clear();
-      _polylines.clear();
-      polygons.clear();
-      selectedMarker = null;
-      _dronepath.clear();
-      _selectedPathsQueue.clear();
-      _totalDistanceKM = 0.0;
-      _remainingDistanceKM_SelectedPath = 0.0;
-      timeduration = 0.0;
-      TLM = 0.0;
+      _isConfirmed = false;
+      _isShapeClosed = false;
+      _ismanual = false;
     });
 
     try {
@@ -145,8 +160,11 @@ late bool _isShapeClosed= false;
     } catch (e) {
       print('Error resetting data in database: $e');
     }
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (BuildContext context) => widget),
+    );
   }
-
   double calculate_selcted_segemnt_distance(List<LatLng> path) {
     double totalDistance = 0.0;
     for (int i = 0; i < path.length - 1; i++) {
@@ -156,13 +174,11 @@ late bool _isShapeClosed= false;
 
     return totalDistance;
   } // Return distance in kilometers
-
   LatLng _lerpLatLng(LatLng a, LatLng b, double t) {
     double lat = a.latitude + (b.latitude - a.latitude) * t;
     double lng = a.longitude + (b.longitude - a.longitude) * t;
     return LatLng(lat, lng);
   }
-
   void _storeTimeDurationInDatabase(double totalDistanceInKM) {
     try {
       const double speed = 10; // Speed in meters per second
@@ -176,7 +192,6 @@ late bool _isShapeClosed= false;
       print('Error storing time duration in database: $e');
     }
   }
-
   void _storeTimeLeftInDatabase(double remainingDistanceKM_SelectedPath) async {
     try {
       const double speed = 10; // Speed in meters per second
@@ -190,7 +205,6 @@ late bool _isShapeClosed= false;
       print('Error storing time duration in database: $e');
     }
   }
-
   double calculateonelinedistance(LatLng start, LatLng end) {
     const R = 6371; // Radius of the Earth in kilometers
     double lat1 = start.latitude * pi / 180;
@@ -204,7 +218,6 @@ late bool _isShapeClosed= false;
     double c = 2 * atan2(sqrt(a), sqrt(1 - a));
     return R * c; // Distance in kilometers
   }
-
   double _calculateTotalDistanceZIGAG(List<LatLng> path) {
     double totalzigzagdis = 0.0;
     for (int i = 0; i < path.length - 1; i++) {
@@ -213,7 +226,9 @@ late bool _isShapeClosed= false;
     return totalzigzagdis;
   } // Return distance in kilometers
 
-  void _startMovement(List<LatLng> path) {
+
+
+  void _startMovement(List<LatLng> path, List<List<LatLng>> selectedSegments) {
     if (path.isEmpty) {
       print("Path is empty, cannot start movement");
       return;
@@ -223,13 +238,21 @@ late bool _isShapeClosed= false;
       _carPosition = path[0];
       _currentPointIndex = 0;
     });
-    _addCarMarker(_isSegmentSelected(path, 0));
+
+    // Use the boolean to decide which marker function to call
+    if (_isHorizontalDirection) {
+      Add_Car_Marker_Horizantal(_isSegmentSelected(path, selectedSegments, 0));
+    } else {
+      Add_Car_Marker_Vertical(_isSegmentSelected(path, selectedSegments, 0));
+    }
+
     double updateInterval = 0.1; // seconds
     _isMoving = true;
     double speed = 10.0; // 10 meters per second
     double totalDistanceCoveredKM_SelectedPath = 0.0;
     double distanceCoveredInWholeJourney = 0.0;
     double segmentDistanceCoveredKM = 0.0;
+
     _movementTimer = Timer.periodic(
         Duration(milliseconds: (updateInterval * 1000).toInt()), (timer) async {
       if (_currentPointIndex < path.length - 1) {
@@ -239,24 +262,20 @@ late bool _isShapeClosed= false;
         double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
         segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
         double segmentProgress =
-            (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+        (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
         _carPosition = _lerpLatLng(start, end, segmentProgress);
 
-        bool isSelectedSegment = _isSegmentSelected(path, _currentPointIndex);
+        bool isSelectedSegment = _isSegmentSelected(path, selectedSegments, _currentPointIndex);
         distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
 
         if (isSelectedSegment) {
           totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
-          double remainingDistanceKM_SelectedPath =
-              _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+          double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
           setState(() {
-            _remainingDistanceKM_SelectedPath =
-                remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
+            _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
             _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
           });
-          // Only update database periodically
           if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
-            // Update every 500m
             FirebaseDatabase.instance
                 .ref()
                 .child('remainingDistance')
@@ -264,19 +283,26 @@ late bool _isShapeClosed= false;
           }
         }
         setState(() {
-          _remainingDistanceKM_TotalPath =
-              (totalZigzagPathKm - distanceCoveredInWholeJourney)
-                  .clamp(0.0, totalZigzagPathKm);
+          _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney)
+              .clamp(0.0, totalZigzagPathKm);
         });
+
         setState(() {
-          _markers.removeWhere(
-              (marker) => marker.markerId == const MarkerId('car'));
-          _addCarMarker(isSelectedSegment);
+          _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
+
+          // Use the boolean to decide which marker function to call
+          if (_isHorizontalDirection) {
+            Add_Car_Marker_Horizantal(isSelectedSegment);
+          } else {
+            Add_Car_Marker_Vertical(isSelectedSegment);
+          }
+
           if (segmentProgress >= 1.0) {
             _currentPointIndex++;
             segmentDistanceCoveredKM = 0.0;
           }
         });
+
         if (_currentPointIndex >= path.length - 1) {
           _isMoving = false;
           timer.cancel();
@@ -290,6 +316,226 @@ late bool _isShapeClosed= false;
       }
     });
   }
+void Selecting_Path_Direction_and_Turn() {
+  bool isStartingPointEmpty = false; // Validation flag for the dropdown
+
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return StatefulBuilder(
+        builder: (BuildContext context, StateSetter setState) {
+          return AlertDialog(
+            titlePadding: EdgeInsets.zero,
+            title: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.indigo[800],
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
+                ),
+              ),
+              child: Text(
+                'Enter settings',
+                style: GoogleFonts.poppins(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Enter Turn Length (Default 5.0m)',
+                  style: GoogleFonts.poppins(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.red[800],
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.indigo),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: TextField(
+                    keyboardType: TextInputType.number,
+                    onChanged: (value) {
+                      setState(() {
+                        _turnLength = double.tryParse(value) ?? 5.0;
+                      });
+                    },
+                    decoration: InputDecoration(
+                      border: InputBorder.none,
+                      hintText: _turnLength.toString(),
+                      hintStyle: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black45,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Column(
+                  children: [
+                    Text(
+                      'Choose Path Direction',
+                      style: GoogleFonts.poppins(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.red[800],
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Row(
+                      children: [
+                        Radio<PathDirection>(
+                          value: PathDirection.horizontal,
+                          groupValue: _selectedDirection,
+                          onChanged: (PathDirection? value) {
+                            setState(() {
+                              _selectedDirection = value!;
+                              _isHorizontalDirection = (value == PathDirection.horizontal);
+                            });
+                          },
+                        ),
+                        Text(
+                          'Horizontal',
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black,
+                          ),
+                        ),
+                        Radio<PathDirection>(
+                          value: PathDirection.vertical,
+                          groupValue: _selectedDirection,
+                          onChanged: (PathDirection? value) {
+                            setState(() {
+                              _selectedDirection = value!;
+                              _isHorizontalDirection = (value == PathDirection.horizontal);
+                            });
+                          },
+                        ),
+                        Text(
+                          'Vertical',
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Choose Starting Point',
+                  style: GoogleFonts.poppins(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.red[800],
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.indigo),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: DropdownButton<LatLng>(
+                    value: _selectedStartingPoint,
+                    isExpanded: true,
+                    items: (_isCustomMode
+                        ? _markers.sublist(0, _markers.length)
+                        : _markers.sublist(0, _markers.length - 1))
+                        .map((marker) {
+                      return DropdownMenuItem<LatLng>(
+                        value: marker.position,
+                        child: Text(marker.markerId.value),
+                      );
+                    }).toList(),
+                    onChanged: (LatLng? newValue) {
+                      setState(() {
+                        _selectedStartingPoint = newValue;
+                        isStartingPointEmpty = false; // Reset error state
+                      });
+                    },
+                  ),
+                ),
+                if (isStartingPointEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      'Starting point is Required',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.red[600],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            actions: <Widget>[
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.indigo[800],
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                onPressed: () {
+                  if (_selectedStartingPoint == null) {
+                    setState(() {
+                      isStartingPointEmpty = true; // Show error message
+                    });
+                  } else {
+                    Navigator.of(context).pop();
+                    extractLatLngPoints();
+                    if (_selectedDirection == PathDirection.vertical) {
+                      _isHorizontalDirection = false; // Set direction flag
+                      dronepath_Vertical(
+                          polygonPoints, pathWidth, _selectedStartingPoint!);
+                    } else {
+                      _isHorizontalDirection = true; // Set direction flag
+                      dronepath_Horizontal(
+                          polygonPoints, pathWidth, _selectedStartingPoint!);
+                    }
+                    _closePolygon(_turnLength);
+                  }
+                },
+                child: Center(
+                  child: Text(
+                    'Generate Path',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
+
+
+
+
+
 
   void _onPathComplete() {
     // Clear all paths and stop movement
@@ -299,8 +545,31 @@ late bool _isShapeClosed= false;
       _markers
           .removeWhere((marker) => marker.markerId == const MarkerId('car'));
     });
+
+    // Trigger the success dialog after path completion
+    ShowSuccessDialog();
   }
 
+// Check if the current segment is part of the selected route
+  bool _isSegmentSelected(List<LatLng> path, List<List<LatLng>> selectedSegments, int index) {
+    if (index < path.length - 1) {
+      LatLng start = path[index];
+      LatLng end = path[index + 1];
+
+      for (var segment in selectedSegments) {
+        print("Checking Segment: $segment vs [$start, $end]"); // Debug log
+        if (_isSegmentEqual([start, end], segment)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+// Compare two segments for equality
+  bool _isSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
+    return (segment1[0] == segment2[0] && segment1[1] == segment2[1]) ||
+        (segment1[0] == segment2[1] && segment1[1] == segment2[0]);
+  }
   Future<void> _loadCarIcons() async {
     // Load the image from your assets
     const ImageConfiguration imageConfiguration = ImageConfiguration(
@@ -309,40 +578,342 @@ late bool _isShapeClosed= false;
     ugv_active = await BitmapDescriptor.fromAssetImage(
       imageConfiguration,
 
-      'images/ugv_dead.png', // Replace with your actual asset path
+      'images/ugv_active.png', // Replace with your actual asset path
     );
     ugv_dead = await BitmapDescriptor.fromAssetImage(
       imageConfiguration,
-      'images/ugv_active.png', // Replace with your actual asset path
+      'images/ugv_dead.png', // Replace with your actual asset path
+      //'images/ugv_active.png', // Replace with your actual asset path
     );
   }
-
-  Future<void> _addCarMarker(bool isSelectedSegment) async {
+  Future<void> Add_Car_Marker_Horizantal(bool isSelectedSegment) async {
     setState(() {
       _markers.add(Marker(
         markerId: const MarkerId('car'),
-        position: LatLng(_carPosition.latitude,
-            _carPosition.longitude), // Example adjustment
+        position: LatLng(_carPosition.latitude, _carPosition.longitude),
         icon: isSelectedSegment
             ? ugv_active
-            : ugv_dead, // Use ternary operator here
+            : ugv_dead, // Set the car marker based on the segment selection
       ));
     });
   }
-
-  /*Future<void> _addCarMarker(bool isSelectedSegment) async {
+  Future<void> Add_Car_Marker_Vertical(bool isSelectedSegment) async {
     setState(() {
       _markers.add(Marker(
         markerId: const MarkerId('car'),
-        position: _carPosition,
+        position: LatLng(_carPosition.latitude, _carPosition.longitude),
         icon: isSelectedSegment
-            ? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed)
-            : BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+            ? ugv_dead
+            : ugv_active, // Set the car marker based on the segment selection
       ));
     });
-  }*/
+  }
+  void ShowSuccessDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          titlePadding: EdgeInsets.zero, // Remove default padding
+          title: Container(
+            padding: const EdgeInsets.fromLTRB(
+                10, 5, 10, 5), // Adjust padding inside the header
+            decoration: BoxDecoration(
+              color: Colors.indigo[800], // Indigo background color for header
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(20), // Rounded corners for the top
+                topRight: Radius.circular(20),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Spraying Operation Completed',
+                  style: GoogleFonts.poppins(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white, // White text for better contrast
+                  ),
+                ),
+              ],
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SvgPicture.asset(
+                'images/success.svg', // Replace with your SVG image asset path
+                width: 300,
+                height: 300,
+              ),
+              const SizedBox(
+                  height:
+                  5), // Add some space between the image and the button
+            ],
+          ),
+          actions: <Widget>[
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.indigo[800],
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              onPressed: () {
+                Navigator.of(context).pop(); // Close the dialog
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => const MyHomePage()),
+                );
+              },
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.add_to_home_screen_outlined,
+                      color: Colors.white), // Add the home icon
+                  const SizedBox(
+                      width:
+                      10), // Add some space between the icon and the text
+                  Text(
+                    'Go Back to Home',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+  void setup_hardware() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          titlePadding: EdgeInsets.zero, // Remove default padding
+          title: Container(
+            padding: const EdgeInsets.fromLTRB(
+                10, 5, 10, 5), // Adjust padding inside the header
+            decoration: BoxDecoration(
+              color: Colors.indigo[800], // Indigo background color for header
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(20), // Rounded corners for the top
+                topRight: Radius.circular(20),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Your Settings',
+                  style: GoogleFonts.poppins(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white, // White text for better contrast
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close,
+                      color: Colors.white), // White close icon
+                  onPressed: () {
+                    Navigator.pop(context);
+                  },
+                ),
+              ],
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              RichText(
+                text: TextSpan(
+                  children: [
+                    TextSpan(
+                      text: 'Your Coordinate Method: ',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.black, // Black color for the label
+                      ),
+                    ),
+                    TextSpan(
+                      text: _selectedMethod,
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors
+                            .indigo[800], // Indigo color for the method value
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              RichText(
+                text: TextSpan(
+                  children: [
+                    TextSpan(
+                      text: 'Your File Selection Mode: ',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.black, // Black color for the label
+                      ),
+                    ),
+                    TextSpan(
+                      text: _selectedFileSource,
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.indigo[
+                        800], // Indigo color for the file source value
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              RichText(
+                text: TextSpan(
+                  children: [
+                    TextSpan(
+                      text: 'Your Selected File: ',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.black, // Black color for the label
+                      ),
+                    ),
+                    TextSpan(
+                      text: _selectedLocalFile ?? _selectedCloudFile ?? 'None',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.indigo[
+                        800], // Indigo color for the selected file value
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              RichText(
+                text: TextSpan(
+                  children: [
+                    TextSpan(
+                      text: 'Your Turn Length: ',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.black, // Black color for the label
+                      ),
+                    ),
+                    TextSpan(
+                      text: _turnLength.toStringAsFixed(
+                          1), // Format the double to 2 decimal places
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.indigo[
+                        800], // Indigo color for the turn length value
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              RichText(
+                text: TextSpan(
+                  children: [
+                    TextSpan(
+                      text: 'Your Path Direction: ',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.black, // Black color for the label
+                      ),
+                    ),
+                    TextSpan(
+                      text: _selectedDirection == PathDirection.horizontal
+                          ? 'Horizontal'
+                          : 'Vertical',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.indigo[
+                        800], // Indigo color for the path direction value
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              RichText(
+                text: TextSpan(
+                  children: [
+                    TextSpan(
+                      text: 'Your Starting Point is: ',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.black, // Black color for the label
+                      ),
+                    ),
+                    TextSpan(
+                      text: _selectedStartingPoint != null
+                          ? 'Lat: ${_selectedStartingPoint!.latitude.toStringAsFixed(3)}, Lng: ${_selectedStartingPoint!.longitude.toStringAsFixed(3)}'
+                          : 'None',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.indigo[
+                        800], // Indigo color for the starting point value
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.indigo[800],
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              onPressed: () {
+                Navigator.of(context).pop(); // Close the dialog
+
+                _showRoutesDialog();
+              },
+              child: Text(
+                'Proceed',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
   void _showRoutesDialog() {
     List<int> selectedSegments = [];
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -350,28 +921,72 @@ late bool _isShapeClosed= false;
           builder: (context, setState) {
             return AlertDialog(
               backgroundColor: Colors.white,
+              titlePadding: EdgeInsets.zero, // Remove default padding
               title: Center(
-                child: Text(
-                  'Select One or More Routes to Spray',
-                  style: GoogleFonts.poppins(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(10, 5, 10, 5),
+                  decoration: BoxDecoration(
+                    color: Colors.indigo[800],
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(20),
+                      topRight: Radius.circular(20),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Select One or More Routes to Spray',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white,
+                        ),
+                      ),
+
+                    ],
                   ),
                 ),
               ),
-              content: Container(
-                width: 600,
+              content: SizedBox(
+                width: 700,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo[800],
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          // Select all routes
+                          selectedSegments = List.generate(
+                            _dronepath.length ~/ 2,
+                                (i) => i,
+                          );
+                        });
+                      },
+                      child: Text(
+                        'Select All Routes',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
                     Expanded(
                       child: ListView.builder(
                         shrinkWrap: true,
-                        itemCount: (_dronepath.length - 1) ~/ 2,
+                        itemCount: _dronepath.length ~/ 2,
                         itemBuilder: (BuildContext context, int index) {
                           int routeNumber = index + 1;
                           bool isSelected = selectedSegments.contains(index);
+
                           return CheckboxListTile(
                             title: Text(
                               'Route #$routeNumber',
@@ -395,80 +1010,67 @@ late bool _isShapeClosed= false;
                         },
                       ),
                     ),
-                    Row(
-                      children: [
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.indigo[800],
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          onPressed: () {
-                            setState(() {
-                              selectedSegments = List.generate(
-                                (_dronepath.length - 1) ~/ 2,
-                                (i) => i,
-                              );
-                            });
-                          },
-                          child: Text(
-                            'Select All',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.white,
-                            ),
-                          ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo[800],
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        const SizedBox(width: 8),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.indigo[800],
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                            List<List<LatLng>> selectedPaths = [];
-                            double totalDistance = 0.0;
-                            for (int index in selectedSegments) {
-                              int startIndex = index * 2;
-                              List<LatLng> segment = _dronepath.sublist(
-                                startIndex,
-                                startIndex + 2,
-                              );
-                              selectedPaths.add(segment);
-                              double segmentDistance =
-                                  calculate_selcted_segemnt_distance(segment);
-                              totalDistance += segmentDistance;
-                            }
-                            _totalDistanceKM =
-                                totalDistance; // Distance in kilometers
-                            FirebaseDatabase.instance
-                                .ref()
-                                .child('totalDistance')
-                                .set(_totalDistanceKM);
-                            _storeTimeDurationInDatabase(_totalDistanceKM);
-                            setState(() {
-                              _selectedPathsQueue.addAll(selectedPaths);
-                            });
-                            if (!_isMoving) {
-                              _startMovement(
-                                  _dronepath); // Start movement with the full path
-                            }
-                          },
-                          child: Text(
-                            'Start Routing',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.white,
-                            ),
-                          ),
+                      ),
+                      onPressed: () {
+                        // Validation: Ensure at least one route is selected
+                        if (selectedSegments.isEmpty) {
+                          _showWarningDialog(
+                              context); // Show warning if no routes are selected
+                          return;
+                        }
+
+                        Navigator.of(context)
+                            .pop(); // Close the dialog if validation passes
+                        List<List<LatLng>> selectedPaths = [];
+                        double totalDistance = 0.0;
+
+                        // Build the selected paths based on selected segments
+                        for (int index in selectedSegments) {
+                          int startIndex = index * 2;
+                          List<LatLng> segment = _dronepath.sublist(
+                            startIndex,
+                            startIndex + 2,
+                          );
+                          selectedPaths.add(segment);
+                          double segmentDistance =
+                          calculate_selcted_segemnt_distance(segment);
+                          totalDistance += segmentDistance;
+                        }
+
+                        // Update total distance and selected paths queue
+                        _totalDistanceKM =
+                            totalDistance; // Distance in kilometers
+                        FirebaseDatabase.instance
+                            .ref()
+                            .child('totalDistance')
+                            .set(_totalDistanceKM);
+                        _storeTimeDurationInDatabase(_totalDistanceKM);
+
+                        setState(() {
+                          _selectedPathsQueue.clear();
+                          _selectedPathsQueue.addAll(selectedPaths);
+                        });
+
+                        // Start movement if not already moving
+                        if (!_isMoving) {
+                          _startMovement(_dronepath,
+                              _selectedPathsQueue); // Pass both full and selected paths
+                        }
+                      },
+                      child: Text(
+                        'Start Spraying',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white,
                         ),
-                      ],
+                      ),
                     ),
                   ],
                 ),
@@ -479,101 +1081,47 @@ late bool _isShapeClosed= false;
       },
     );
   }
-
-  /*void dronepath_Horizontal(
-      List<LatLng> polygon, double pathWidth, LatLng startPoint) {
-    if (polygon.isEmpty) return;
-
-    List<LatLng> sortedPoints = List.from(polygon);
-    sortedPoints.sort((a, b) => a.latitude.compareTo(b.latitude));
-
-    double minLat = sortedPoints.first.latitude;
-    double maxLat = sortedPoints.last.latitude;
-
-    double startLat = startPoint.latitude.clamp(minLat, maxLat);
-
-    List<LatLng> dronepath = [];
-    bool leftToRight = true;
-
-    double latIncrement = pathWidth / 111111; // Convert pathWidth to degrees
-
-    // Generate path from the starting point downwards
-    for (double lat = startLat; lat <= maxLat; lat += latIncrement) {
-      List<LatLng> intersections = [];
-      for (int i = 0; i < polygon.length; i++) {
-        LatLng p1 = polygon[i];
-        LatLng p2 = polygon[(i + 1) % polygon.length];
-        if ((p1.latitude <= lat && p2.latitude >= lat) ||
-            (p1.latitude >= lat && p2.latitude <= lat)) {
-          double lng = p1.longitude +
-              (lat - p1.latitude) *
-                  (p2.longitude - p1.longitude) /
-                  (p2.latitude - p1.latitude);
-          intersections.add(LatLng(lat, lng));
-        }
-      }
-      if (intersections.length == 2) {
-        intersections.sort((a, b) => a.longitude.compareTo(b.longitude));
-        if (leftToRight) {
-          dronepath.addAll(intersections);
-        } else {
-          dronepath.addAll(intersections.reversed);
-        }
-        leftToRight = !leftToRight;
-      }
-    }
-
-    // Generate path from the starting point upwards
-    for (double lat = startLat - latIncrement;
-        lat >= minLat;
-        lat -= latIncrement) {
-      List<LatLng> intersections = [];
-      for (int i = 0; i < polygon.length; i++) {
-        LatLng p1 = polygon[i];
-        LatLng p2 = polygon[(i + 1) % polygon.length];
-        if ((p1.latitude <= lat && p2.latitude >= lat) ||
-            (p1.latitude >= lat && p2.latitude <= lat)) {
-          double lng = p1.longitude +
-              (lat - p1.latitude) *
-                  (p2.longitude - p1.longitude) /
-                  (p2.latitude - p1.latitude);
-          intersections.add(LatLng(lat, lng));
-        }
-      }
-      if (intersections.length == 2) {
-        intersections.sort((a, b) => a.longitude.compareTo(b.longitude));
-        if (leftToRight) {
-          dronepath.addAll(intersections);
-        } else {
-          dronepath.addAll(intersections.reversed);
-        }
-        leftToRight = !leftToRight;
-      }
-    }
-
-    // Ensure the starting point is added first
-    dronepath.insert(0, startPoint);
-
-    double totalDistancezigzagKm = _calculateTotalDistanceZIGAG(dronepath);
-
-    setState(() {
-      _dronepath = dronepath; // Update the state with the new drone path
-      _polylines.add(Polyline(
-        polylineId: const PolylineId('dronepath'),
-        points: dronepath,
-        color: Colors.red,
-
-
-
-        width: 5,
-
-
-
-      ));
-      totalZigzagPathKm = totalDistancezigzagKm; // Update the distance here
-    });
-  }*/
-
+// Warning dialog when no routes are selected
+  void _showWarningDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(
+            'No Route Selected',
+            style: GoogleFonts.poppins(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Colors.red,
+            ),
+          ),
+          content: Text(
+            'Please select at least one route before starting the spray operation.',
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Colors.black87,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close the warning dialog
+              },
+              child: Text(
+                'Close',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.indigo[800],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
   void dronepath_Horizontal(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
 
@@ -590,13 +1138,13 @@ late bool _isShapeClosed= false;
 
     double startLat = startPoint.latitude.clamp(minLat, maxLat);
 
-    List<LatLng> dronePath = [];
+    List<List<LatLng>> straightPaths = [];
     bool leftToRight = true;
 
     // Convert path width to latitude degrees (rough approximation)
     double latIncrement = pathWidth / 111111; // 1 degree latitude ~= 111.1 km
 
-    // Horizontal path generation: start from startPoint going downwards
+    // Generate paths downwards from the starting point (towards maxLat)
     for (double lat = startLat; lat <= maxLat; lat += latIncrement) {
       List<LatLng> intersections = [];
 
@@ -612,7 +1160,6 @@ late bool _isShapeClosed= false;
               (lat - p1.latitude) *
                   (p2.longitude - p1.longitude) /
                   (p2.latitude - p1.latitude);
-          // Add the intersection point
           intersections.add(LatLng(lat, lng.clamp(minLng, maxLng)));
         }
       }
@@ -622,20 +1169,19 @@ late bool _isShapeClosed= false;
         intersections.sort((a, b) => a.longitude.compareTo(b.longitude));
 
         if (leftToRight) {
-          dronePath.addAll(intersections);
+          straightPaths.add([intersections[0], intersections[1]]);
         } else {
-          dronePath.addAll(intersections.reversed);
+          straightPaths.add([intersections[1], intersections[0]]);
         }
 
         leftToRight = !leftToRight; // Switch direction for zig-zag effect
       }
     }
 
-    // Generate the path upwards as well (from startLat to minLat)
-    List<LatLng> upwardPath = [];
+    // Generate paths upwards from the starting point (towards minLat)
     for (double lat = startLat - latIncrement;
-        lat >= minLat;
-        lat -= latIncrement) {
+    lat >= minLat;
+    lat -= latIncrement) {
       List<LatLng> intersections = [];
 
       // Find intersections for this latitude with polygon edges
@@ -657,26 +1203,125 @@ late bool _isShapeClosed= false;
         intersections.sort((a, b) => a.longitude.compareTo(b.longitude));
 
         if (leftToRight) {
-          upwardPath.addAll(intersections);
+          straightPaths.add([intersections[0], intersections[1]]);
         } else {
-          upwardPath.addAll(intersections.reversed);
+          straightPaths.add([intersections[1], intersections[0]]);
         }
 
         leftToRight = !leftToRight;
       }
     }
 
-    // Add the upward path to the drone path
-    dronePath.addAll(upwardPath);
+    setState(() {
+      _dronepath = straightPaths
+          .expand((segment) => segment)
+          .toList(); // Flatten straight paths into drone path
+      _polylines.add(Polyline(
+        polylineId: const PolylineId('dronepath'),
+        points: _dronepath,
+        color: Colors.red,
+        width: 3,
+      ));
+    });
+  }
+  void dronepath_Vertical(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
+    if (polygon.isEmpty) return;
 
-    // Ensure the starting point is included first
+    // Sort the polygon points by longitude to get the bounds
+    List<LatLng> sortedByLng = List.from(polygon)
+      ..sort((a, b) => a.longitude.compareTo(b.longitude));
+
+    double minLng = sortedByLng.first.longitude;
+    double maxLng = sortedByLng.last.longitude;
+
+    // Clamp the starting longitude to the bounds
+    double startLng = startPoint.longitude.clamp(minLng, maxLng);
+
+    List<List<LatLng>> straightPaths = [];
+    bool bottomToTop = true;
+
+    // Convert pathWidth to longitude degrees (rough approximation)
+    double lngIncrement =
+        pathWidth / 111111; // 1 degree longitude ~= 111.1 km at the equator
+
+    // Generate paths to the right (towards maxLng)
+    for (double lng = startLng; lng <= maxLng; lng += lngIncrement) {
+      List<LatLng> intersections = [];
+
+      // Find intersections for this longitude with polygon edges
+      for (int i = 0; i < polygon.length; i++) {
+        LatLng p1 = polygon[i];
+        LatLng p2 = polygon[(i + 1) % polygon.length];
+
+        // Check if the longitude line intersects with the edge (p1 to p2)
+        if ((p1.longitude <= lng && p2.longitude >= lng) ||
+            (p1.longitude >= lng && p2.longitude <= lng)) {
+          double lat = p1.latitude +
+              (lng - p1.longitude) *
+                  (p2.latitude - p1.latitude) /
+                  (p2.longitude - p1.longitude);
+          intersections.add(LatLng(lat, lng));
+        }
+      }
+
+      // Process intersections: should have exactly two for a vertical line
+      if (intersections.length == 2) {
+        intersections.sort((a, b) => a.latitude.compareTo(b.latitude));
+
+        if (bottomToTop) {
+          straightPaths.add([intersections[0], intersections[1]]);
+        } else {
+          straightPaths.add([intersections[1], intersections[0]]);
+        }
+
+        bottomToTop = !bottomToTop; // Switch direction for zig-zag effect
+      }
+    }
+
+    // Generate paths to the left (towards minLng)
+    for (double lng = startLng - lngIncrement;
+    lng >= minLng;
+    lng -= lngIncrement) {
+      List<LatLng> intersections = [];
+
+      // Find intersections for this longitude with polygon edges
+      for (int i = 0; i < polygon.length; i++) {
+        LatLng p1 = polygon[i];
+        LatLng p2 = polygon[(i + 1) % polygon.length];
+
+        if ((p1.longitude <= lng && p2.longitude >= lng) ||
+            (p1.longitude >= lng && p2.longitude <= lng)) {
+          double lat = p1.latitude +
+              (lng - p1.longitude) *
+                  (p2.latitude - p1.latitude) /
+                  (p2.longitude - p1.longitude);
+          intersections.add(LatLng(lat, lng));
+        }
+      }
+
+      if (intersections.length == 2) {
+        intersections.sort((a, b) => a.latitude.compareTo(b.latitude));
+
+        if (bottomToTop) {
+          straightPaths.add([intersections[0], intersections[1]]);
+        } else {
+          straightPaths.add([intersections[1], intersections[0]]);
+        }
+
+        bottomToTop = !bottomToTop; // Switch direction for zig-zag effect
+      }
+    }
+
+    // Flatten the list of straight paths and ensure the starting point is added first
+    List<LatLng> dronePath =
+    straightPaths.expand((segment) => segment).toList();
     dronePath.insert(0, startPoint);
 
-    // Calculate the total distance of the zigzag path
+    // Calculate the total zigzag path distance
     double totalDistancezigzagKm = _calculateTotalDistanceZIGAG(dronePath);
 
     setState(() {
-      _dronepath = dronePath; // Update state with the new drone path
+      _dronepath = dronePath; // Update the state with the new drone path
       _polylines.add(Polyline(
         polylineId: const PolylineId('dronepath'),
         points: dronePath,
@@ -687,258 +1332,14 @@ late bool _isShapeClosed= false;
           totalDistancezigzagKm; // Update the total zigzag distance
     });
   }
-
-  void dronepath_Vertical(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
-    if (polygon.isEmpty) return;
-
-    List<LatLng> sortedPoints = List.from(polygon);
-    sortedPoints.sort((a, b) => a.longitude.compareTo(b.longitude));
-
-    double minLng = sortedPoints.first.longitude;
-    double maxLng = sortedPoints.last.longitude;
-
-    double startLng = startPoint.longitude.clamp(minLng, maxLng);
-
-    List<LatLng> dronepath = [];
-    bool bottomToTop = true;
-
-    double lngIncrement = pathWidth / 111111; // Convert pathWidth to degrees
-
-    // Generate path from the starting point to the right
-    for (double lng = startLng; lng <= maxLng; lng += lngIncrement) {
-      List<LatLng> intersections = [];
-      for (int i = 0; i < polygon.length; i++) {
-        LatLng p1 = polygon[i];
-        LatLng p2 = polygon[(i + 1) % polygon.length];
-        if ((p1.longitude <= lng && p2.longitude >= lng) ||
-            (p1.longitude >= lng && p2.longitude <= lng)) {
-          double lat = p1.latitude +
-              (lng - p1.longitude) *
-                  (p2.latitude - p1.latitude) /
-                  (p2.longitude - p1.longitude);
-          intersections.add(LatLng(lat, lng));
-        }
-      }
-      if (intersections.length == 2) {
-        intersections.sort((a, b) => a.latitude.compareTo(b.latitude));
-        if (bottomToTop) {
-          dronepath.addAll(intersections);
-        } else {
-          dronepath.addAll(intersections.reversed);
-        }
-        bottomToTop = !bottomToTop;
-      }
-    }
-
-    // Generate path from the starting point to the left
-    for (double lng = startLng - lngIncrement;
-        lng >= minLng;
-        lng -= lngIncrement) {
-      List<LatLng> intersections = [];
-      for (int i = 0; i < polygon.length; i++) {
-        LatLng p1 = polygon[i];
-        LatLng p2 = polygon[(i + 1) % polygon.length];
-        if ((p1.longitude <= lng && p2.longitude >= lng) ||
-            (p1.longitude >= lng && p2.longitude <= lng)) {
-          double lat = p1.latitude +
-              (lng - p1.longitude) *
-                  (p2.latitude - p1.latitude) /
-                  (p2.longitude - p1.longitude);
-          intersections.add(LatLng(lat, lng));
-        }
-      }
-      if (intersections.length == 2) {
-        intersections.sort((a, b) => a.latitude.compareTo(b.latitude));
-        if (bottomToTop) {
-          dronepath.addAll(intersections);
-        } else {
-          dronepath.addAll(intersections.reversed);
-        }
-        bottomToTop = !bottomToTop;
-      }
-    }
-
-    // Ensure the starting point is added first
-    dronepath.insert(0, startPoint);
-
-    double totalDistancezigzagKm = _calculateTotalDistanceZIGAG(dronepath);
-
-    setState(() {
-      _dronepath = dronepath; // Update the state with the new drone path
-      _polylines.add(Polyline(
-        polylineId: const PolylineId('dronepath'),
-        points: dronepath,
-        color: Colors.red,
-        width: 3,
-      ));
-      totalZigzagPathKm = totalDistancezigzagKm; // Update the distance here
-    });
-  }
-
 // Extracting LatLng points from markers
   void extractLatLngPoints() {
     if (polygons.isNotEmpty) {
       polygonPoints = polygons.first.points.toList();
     }
   }
-
-// Dialog for selecting path direction and starting point
-  void Selecting_Path_Direction_and_Turn() {
-    double turnLength = 10.0; // Default turn length
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setState) {
-            return AlertDialog(
-              title: Text(
-                'Enter Turn Length (meters) default is 10 meters',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black,
-                ),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    keyboardType: TextInputType.number,
-                    onChanged: (value) {
-                      turnLength = double.tryParse(value) ?? 10.0;
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Radio<PathDirection>(
-                        value: PathDirection.horizontal,
-                        groupValue: _selectedDirection,
-                        onChanged: (PathDirection? value) {
-                          setState(() {
-                            _selectedDirection = value!;
-                          });
-                        },
-                      ),
-                      Text(
-                        'Horizontal',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black,
-                        ),
-                      ),
-                      Radio<PathDirection>(
-                        value: PathDirection.vertical,
-                        groupValue: _selectedDirection,
-                        onChanged: (PathDirection? value) {
-                          setState(() {
-                            _selectedDirection = value!;
-                          });
-                        },
-                      ),
-                      Text(
-                        'Vertical',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Choose Starting Point',
-                    style: GoogleFonts.poppins(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black,
-                    ),
-                  ),
-                  DropdownButton<LatLng>(
-                    value: selectedMarker,
-                    isExpanded: true,
-                    items: (_isCustomMode
-                            ? _markers.sublist(0, _markers.length)
-                            : _markers.sublist(0, _markers.length - 1))
-                        .map((marker) {
-                      return DropdownMenuItem<LatLng>(
-                        value: marker.position,
-                        child: Text(marker.markerId.value),
-                      );
-                    }).toList(),
-                    onChanged: (LatLng? newValue) {
-                      setState(() {
-                        selectedMarker = newValue;
-                      });
-                    },
-                  )
-                ],
-              ),
-              actions: <Widget>[
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.indigo[800],
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    extractLatLngPoints();
-                    if (_selectedDirection == PathDirection.vertical) {
-                      dronepath_Vertical(
-                          polygonPoints, pathWidth, selectedMarker!);
-                    } else {
-                      dronepath_Horizontal(
-                          polygonPoints, pathWidth, selectedMarker!);
-                    }
-                    _closePolygon(turnLength);
-                  },
-                  child: Center(
-                    child: Text(
-                      'Generate Path',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  bool _isSegmentSelected(List<LatLng> path, int index) {
-    if (index < path.length - 1) {
-      List<LatLng> segment = path.sublist(index, index + 2);
-      for (List<LatLng> selectedSegment in _selectedPathsQueue) {
-        if (_isSegmentEqual(segment, selectedSegment)) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  bool _isSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
-    if (segment1.length != segment2.length) {
-      return false;
-    }
-    for (int i = 0; i < segment1.length; i++) {
-      if (segment1[i] != segment2[i]) {
-        return false;
-      }
-    }
-    return true;
-  }
-
+  
+  
   Future<void> _closePolygon(double turnLength) async {
     setState(() {
       _polylines.clear();
@@ -967,7 +1368,6 @@ late bool _isShapeClosed= false;
       }
     }
   }
-
   Future<void> _requestLocationPermission() async {
     bool _serviceEnabled;
     PermissionStatus _permissionGranted;
@@ -988,7 +1388,6 @@ late bool _isShapeClosed= false;
     _currentLocation = await _location.getLocation();
     setState(() {});
   }
-
   void _initializeFirebaseListener() {
     _latRef = FirebaseDatabase.instance.ref().child('Current_Lat');
     _longRef = FirebaseDatabase.instance.ref().child('Current_Long');
@@ -1006,23 +1405,20 @@ late bool _isShapeClosed= false;
       }
     });
   }
-
   void _updateMarkerPosition(double lat, double long) {
     setState(() {
       _currentPosition = LatLng(lat, long);
     });
   }
-
   void _hideKeyboard() {
     FocusScope.of(context).previousFocus();
   }
-
   void _showInputSelectionPopup() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(
+      shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.only(
           topLeft: Radius.circular(20),
           topRight: Radius.circular(20),
@@ -1033,21 +1429,32 @@ late bool _isShapeClosed= false;
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              height: 40,
-              alignment: Alignment.centerRight,
-              child: IconButton(
-                icon: Icon(Icons.close),
-                onPressed: () {
-                  Navigator.pop(context);
-                },
+              padding: EdgeInsets.fromLTRB(10, 5, 10, 5),
+              decoration: BoxDecoration(
+                color: Colors.indigo[800],
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
+                ),
               ),
-            ),
-            Text(
-              'Select Coordinate Method',
-              style: GoogleFonts.poppins(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: Colors.black,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Select Coordinate Method',
+                    style: GoogleFonts.poppins(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close, color: Colors.white),
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 10),
@@ -1059,10 +1466,13 @@ late bool _isShapeClosed= false;
                 ),
               ),
               onPressed: () {
-                Navigator.pop(context);
                 setState(() {
                   _isCustomMode = true;
+                  _ismanual = true;
+                  _selectedMethod =
+                  'Placing Markers Manually'; // Store selection
                 });
+                Navigator.pop(context);
               },
               child: Text(
                 'Place Markers Manually',
@@ -1077,9 +1487,7 @@ late bool _isShapeClosed= false;
             Stack(
               alignment: Alignment.center,
               children: [
-                const Divider(
-                  color: Colors.grey,
-                ),
+                const Divider(color: Colors.grey),
                 Container(
                   color: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -1103,6 +1511,10 @@ late bool _isShapeClosed= false;
                 ),
               ),
               onPressed: () {
+                setState(() {
+                  _selectedMethod =
+                  'Load Coordinates From KML'; // Store selection
+                });
                 Navigator.pop(context);
                 _showFileSelectionPopup();
               },
@@ -1121,28 +1533,44 @@ late bool _isShapeClosed= false;
       },
     );
   }
-
   Future<void> _showFileSelectionPopup() async {
     List<String> localFiles = await _getAssetFiles(); // Get list of local files
     List<String> cloudFiles =
-        await _fetchCloudFiles(); // Get list of cloud files
-
-    String? selectedLocalFile; // To hold the selected local file
-    String? selectedCloudFile; // To hold the selected cloud file
+    await _fetchCloudFiles(); // Get list of cloud files
 
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           backgroundColor: Colors.white,
-          title: Center(
-            child: Text(
-              'Select Files to Plot',
-              style: GoogleFonts.poppins(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: Colors.black,
+          titlePadding: EdgeInsets.zero,
+          title: Container(
+            padding: EdgeInsets.fromLTRB(10, 5, 10, 5),
+            decoration: BoxDecoration(
+              color: Colors.indigo[800],
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(10),
+                topRight: Radius.circular(10),
               ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Select Files to Plot',
+                  style: GoogleFonts.poppins(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_outlined, color: Colors.white),
+                  onPressed: () {
+                    Navigator.pop(context);
+                  },
+                ),
+              ],
             ),
           ),
           content: StatefulBuilder(
@@ -1150,9 +1578,20 @@ late bool _isShapeClosed= false;
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  Center(
-                      child: Row(
+                  Row(
                     children: [
+                      Radio<String>(
+                        value: 'Local',
+                        groupValue: _selectedFileSource,
+                        onChanged: (String? value) {
+                          setState(() {
+                            _selectedFileSource = value;
+                            _selectedLocalFile = null;
+                            _selectedCloudFile =
+                            null; // Reset the other selection
+                          });
+                        },
+                      ),
                       Text(
                         'Select files from Local',
                         style: GoogleFonts.poppins(
@@ -1161,44 +1600,62 @@ late bool _isShapeClosed= false;
                           color: Colors.indigo[800],
                         ),
                       ),
-                      const SizedBox(
-                          width:
-                              5), // add some space between the text and the icon
+                      const SizedBox(width: 5),
                       Image.asset(
                         'images/mobile.png', // replace with your image asset path
-                        width: 40, // adjust the width to your liking
-                        height: 40, // adjust the height to your liking
+                        width: 40,
+                        height: 40,
                       ),
                     ],
-                  )),
-                  DropdownButton<String>(
-                    hint: Text(
-                      'Choose File',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black45,
+                  ),
+                  if (_selectedFileSource == 'Local')
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.indigo),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: EdgeInsets.symmetric(horizontal: 12),
+                      child: DropdownButton<String>(
+                        hint: Text(
+                          'Choose File',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black45,
+                          ),
+                        ),
+                        value: _selectedLocalFile,
+                        isExpanded: true,
+                        underline: SizedBox(),
+                        onChanged: (String? newValue) {
+                          setState(() {
+                            _selectedLocalFile = newValue;
+                          });
+                        },
+                        items: localFiles
+                            .map<DropdownMenuItem<String>>((String file) {
+                          return DropdownMenuItem<String>(
+                            value: file,
+                            child: Text(file),
+                          );
+                        }).toList(),
                       ),
                     ),
-                    value: selectedLocalFile,
-                    isExpanded: true,
-                    onChanged: (String? newValue) {
-                      setState(() {
-                        selectedLocalFile = newValue;
-                      });
-                    },
-                    items:
-                        localFiles.map<DropdownMenuItem<String>>((String file) {
-                      return DropdownMenuItem<String>(
-                        value: file,
-                        child: Text(file),
-                      );
-                    }).toList(),
-                  ),
                   const SizedBox(height: 20),
-                  Center(
-                      child: Row(
+                  Row(
                     children: [
+                      Radio<String>(
+                        value: 'Cloud',
+                        groupValue: _selectedFileSource,
+                        onChanged: (String? value) {
+                          setState(() {
+                            _selectedFileSource = value;
+                            _selectedLocalFile = null;
+                            _selectedCloudFile =
+                            null; // Reset the other selection
+                          });
+                        },
+                      ),
                       Text(
                         'Select files from Cloud',
                         style: GoogleFonts.poppins(
@@ -1207,40 +1664,47 @@ late bool _isShapeClosed= false;
                           color: Colors.indigo[800],
                         ),
                       ),
-                      const SizedBox(
-                          width:
-                              5), // add some space between the text and the icon
+                      const SizedBox(width: 5),
                       Image.asset(
                         'images/cloud.png', // replace with your image asset path
-                        width: 40, // adjust the width to your liking
-                        height: 40, // adjust the height to your liking
+                        width: 40,
+                        height: 40,
                       ),
                     ],
-                  )),
-                  DropdownButton<String>(
-                    hint: Text(
-                      'Choose File',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black45,
+                  ),
+                  if (_selectedFileSource == 'Cloud')
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.indigo),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: DropdownButton<String>(
+                        hint: Text(
+                          'Choose File',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black45,
+                          ),
+                        ),
+                        value: _selectedCloudFile,
+                        isExpanded: true,
+                        underline: SizedBox(),
+                        onChanged: (String? newValue) {
+                          setState(() {
+                            _selectedCloudFile = newValue;
+                          });
+                        },
+                        items: cloudFiles
+                            .map<DropdownMenuItem<String>>((String file) {
+                          return DropdownMenuItem<String>(
+                            value: file,
+                            child: Text(file),
+                          );
+                        }).toList(),
                       ),
                     ),
-                    value: selectedCloudFile,
-                    isExpanded: true,
-                    onChanged: (String? newValue) {
-                      setState(() {
-                        selectedCloudFile = newValue;
-                      });
-                    },
-                    items:
-                        cloudFiles.map<DropdownMenuItem<String>>((String file) {
-                      return DropdownMenuItem<String>(
-                        value: file,
-                        child: Text(file),
-                      );
-                    }).toList(),
-                  ),
                 ],
               );
             },
@@ -1254,14 +1718,14 @@ late bool _isShapeClosed= false;
                 ),
               ),
               onPressed: () {
-                if (selectedLocalFile != null || selectedCloudFile != null) {
+                if (_selectedLocalFile != null || _selectedCloudFile != null) {
                   Navigator.pop(context);
-                  if (selectedLocalFile != null) {
+                  if (_selectedLocalFile != null) {
                     _loadMarkersFromFile(
-                        selectedLocalFile!); // Local file logic
-                  } else if (selectedCloudFile != null) {
+                        _selectedLocalFile!); // Local file logic
+                  } else if (_selectedCloudFile != null) {
                     _loadMarkersFromCloudFile(
-                        selectedCloudFile!); // Cloud file logic
+                        _selectedCloudFile!); // Cloud file logic
                   }
                 }
               },
@@ -1298,7 +1762,6 @@ late bool _isShapeClosed= false;
       },
     );
   }
-
   Future<void> _loadMarkersFromCloudFile(String fileName) async {
     try {
       final Reference fileRef = FirebaseStorage.instance.ref().child(fileName);
@@ -1350,11 +1813,6 @@ late bool _isShapeClosed= false;
     }
   }
 //Widget to make a button which will trigger the functions SELECTING_PATH_AND_DIRECTION()
-
-
-
-
-
   Future<void> _loadMarkersFromFile(String fileName) async {
     final contents = await rootBundle.loadString(fileName);
 
@@ -1374,7 +1832,7 @@ late bool _isShapeClosed= false;
           markerId: markerId,
           position: latLng,
           icon:
-              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
         );
 
         _markers.add(newMarker);
@@ -1385,18 +1843,12 @@ late bool _isShapeClosed= false;
     setState(() {
       _updatePolylines();
       _updateRouteData();
-     // Selecting_Path_Direction_and_Turn(); //Confirm  button Wdget should be shown and triger only isnted of this funtion ;
+      // Selecting_Path_Direction_and_Turn(); //Confirm  button Wdget should be shown and triger only isnted of this funtion ;
     });
 
     // Animate the camera to the first marker after loading markers
     animateToFirstMarker();
   }
-
-
-
-
-
-
 // Function to fetch files from Firebase Storag
   Future<List<String>> _fetchCloudFiles() async {
     List<String> fileNames = [];
@@ -1410,7 +1862,6 @@ late bool _isShapeClosed= false;
     }
     return fileNames;
   }
-
   Future<List<String>> _getAssetFiles() async {
     // Load the AssetManifest file
     final manifestContent = await rootBundle.loadString('AssetManifest.json');
@@ -1426,20 +1877,38 @@ late bool _isShapeClosed= false;
 
     return txtFiles;
   }
+  void _updatePolylines() {
+    _polylines.clear();
 
-  void animateToFirstMarker() {
-    if (_isCustomMode == false && _markerPositions.isNotEmpty) {
-      _googleMapController.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(
-            target: _markerPositions.first, // Animate to first marker position
-            zoom: 20.0,
-          ),
-        ),
-      );
+    if (_markerPositions.length > 1) {
+      // Draw the polylines connecting the markers
+      for (int i = 0; i < _markerPositions.length - 1; i++) {
+        _polylines.add(Polyline(
+          polylineId: PolylineId('route$i'),
+          points: [_markerPositions[i], _markerPositions[i + 1]],
+          color: Colors.blue,
+          width: 3,
+        ));
+      }
+
+      // Check if the shape is closed by comparing the first and last marker positions
+      if (_markerPositions.first == _markerPositions.last) {
+        setState(() {
+          _isShapeClosed =
+          true; // Set the boolean to true if the shape is closed
+        });
+      } else {
+        setState(() {
+          _isShapeClosed = false; // Set to false if the shape is not closed
+        });
+      }
+    } else {
+      setState(() {
+        _isShapeClosed =
+        false; // If fewer than 2 markers, the shape cannot be closed
+      });
     }
   }
-
 //UI BUILD
   @override
   Widget build(BuildContext context) {
@@ -1456,7 +1925,7 @@ late bool _isShapeClosed= false;
         backgroundColor: Colors.indigo[800],
         toolbarHeight: 80, // Custom height for the AppBar
         leading: IconButton(
-          icon: Icon(
+          icon: const Icon(
             Icons.arrow_back,
             color: Colors.white,
             size: 25,
@@ -1467,7 +1936,7 @@ late bool _isShapeClosed= false;
         ),
         flexibleSpace: Padding(
           padding:
-              const EdgeInsets.only(top: 40.0), // Padding to control spacing
+          const EdgeInsets.only(top: 40.0), // Padding to control spacing
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -1504,228 +1973,218 @@ late bool _isShapeClosed= false;
         child: Column(
           children: [
             Container(
-              padding: EdgeInsets.all(10),
+              padding: EdgeInsets.all(15),
               color: Colors.white,
               child: Center(
-                child: YoutubePlayer(
-                  controller: widget.controller,
-                  showVideoProgressIndicator: false,
+                child: Container(
+                  color: Colors.grey[300], // Light grey background
+                  width: 400, // Full width
+                  height: 200, // Adjust height as needed
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.videocam_off, // No camera icon
+                        size: 50,
+                        color: Colors.grey[700],
+                      ),
+                      SizedBox(height: 10), // Space between icon and text
+                      Text(
+                        'No Camera View Found',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                      SizedBox(height: 5), // Small space between texts
+                      Text(
+                        'Check Your Camera Settings',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          color: Colors.grey[800],
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-
-      Stack(
-
-        children: [
-
-          Center(
-
-            child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+            Stack(
+              children: [
+                Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      Column(
+                      const Card(
+                        //fields inside map comes here
+                      ),
+                      widget.isManualControl
+                          ? Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          GestureDetector(
-                            onTapDown: (TapDownDetails details) {
-                              setState(() {
-                                _isUpPressed = true;
-                                _isLeftPressed = false;
-                                _isRightPressed = false;
-                                _isDownPressed = false;
-                                drone_direct = 3;
-                              });
-                              _updateValueInDatabase(drone_direct);
-                            },
-                            onTapUp: (TapUpDetails details) {
-                              setState(() {
-                                _isUpPressed = false;
-                                drone_direct = 0;
-                              });
-                              _updateValueInDatabaseOnRelease();
-                            },
-                            child: Image.asset(
-                              'images/up.png',
-                              width: _isUpPressed ? 45 : 35,
-                              height: _isUpPressed ? 45 : 35,
-                            ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Column(
+                                children: [
+                                  GestureDetector(
+                                    onTapDown: (TapDownDetails details) {
+                                      setState(() {
+                                        _isUpPressed = true;
+                                        _isLeftPressed = false;
+                                        _isRightPressed = false;
+                                        _isDownPressed = false;
+                                        drone_direct = 3;
+                                      });
+                                      _updateValueInDatabase(
+                                          drone_direct);
+                                    },
+                                    onTapUp: (TapUpDetails details) {
+                                      setState(() {
+                                        _isUpPressed = false;
+                                        drone_direct = 0;
+                                      });
+                                      _updateValueInDatabaseOnRelease();
+                                    },
+                                    child: Image.asset(
+                                      'images/up.png',
+                                      width: _isUpPressed ? 45 : 35,
+                                      height: _isUpPressed ? 45 : 35,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 5),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              GestureDetector(
+                                onTapDown: (TapDownDetails details) {
+                                  setState(() {
+                                    _isUpPressed = false;
+                                    _isLeftPressed = true;
+                                    _isRightPressed = false;
+                                    _isDownPressed = false;
+                                    drone_direct = 1;
+                                  });
+                                  _updateValueInDatabase(drone_direct);
+                                },
+                                onTapUp: (TapUpDetails details) {
+                                  setState(() {
+                                    _isLeftPressed = false;
+                                    drone_direct = 0;
+                                  });
+                                  _updateValueInDatabaseOnRelease();
+                                },
+                                child: Image.asset(
+                                  'images/left.png',
+                                  width: _isLeftPressed ? 45 : 35,
+                                  height: _isLeftPressed ? 45 : 35,
+                                ),
+                              ),
+                              SizedBox(width: 5),
+                              GestureDetector(
+                                onTapDown: (TapDownDetails details) {
+                                  setState(() {
+                                    _isUpPressed = false;
+                                    _isStop = true;
+                                    _isLeftPressed = false;
+                                    _isRightPressed = false;
+                                    _isDownPressed = false;
+                                    drone_direct = 0;
+                                  });
+                                  _updateValueInDatabase(drone_direct);
+                                },
+                                onTapUp: (TapUpDetails details) {
+                                  setState(() {
+                                    _isStop = false;
+                                    drone_direct = 0;
+                                  });
+                                  _updateValueInDatabaseOnRelease();
+                                },
+                                child: Image.asset(
+                                  'images/stop.png',
+                                  width: _isStop ? 45 : 35,
+                                  height: _isStop ? 45 : 35,
+                                ),
+                              ),
+                              SizedBox(width: 5),
+                              GestureDetector(
+                                onTapDown: (TapDownDetails details) {
+                                  setState(() {
+                                    _isUpPressed = false;
+                                    _isStop = false;
+                                    _isLeftPressed = false;
+                                    _isRightPressed = true;
+                                    _isDownPressed = false;
+                                    drone_direct = 2;
+                                  });
+                                  _updateValueInDatabase(drone_direct);
+                                },
+                                onTapUp: (TapUpDetails details) {
+                                  setState(() {
+                                    _isRightPressed = false;
+                                    drone_direct = 0;
+                                  });
+                                  _updateValueInDatabaseOnRelease();
+                                },
+                                child: Image.asset(
+                                  'images/right.png',
+                                  width: _isRightPressed ? 45 : 35,
+                                  height: _isRightPressed ? 45 : 35,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 5),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Column(
+                                children: [
+                                  GestureDetector(
+                                    onTapDown: (TapDownDetails details) {
+                                      setState(() {
+                                        _isUpPressed = false;
+                                        _isStop = false;
+                                        _isLeftPressed = false;
+                                        _isRightPressed = false;
+                                        _isDownPressed = true;
+                                        drone_direct = 4;
+                                      });
+                                      _updateValueInDatabase(
+                                          drone_direct);
+                                    },
+                                    onTapUp: (TapUpDetails details) {
+                                      setState(() {
+                                        _isDownPressed = false;
+                                        drone_direct = 0;
+                                      });
+                                      _updateValueInDatabaseOnRelease();
+                                    },
+                                    child: Image.asset(
+                                      'images/down.png',
+                                      width: _isDownPressed ? 45 : 35,
+                                      height: _isDownPressed ? 45 : 35,
+                                    ),
+                                  ),
+                                  SizedBox(height: 10),
+                                ],
+                              ),
+                            ],
                           ),
                         ],
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 5),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      GestureDetector(
-                        onTapDown: (TapDownDetails details) {
-                          setState(() {
-                            _isUpPressed = false;
-                            _isLeftPressed = true;
-                            _isRightPressed = false;
-                            _isDownPressed = false;
-                            drone_direct = 1;
-                          });
-                          _updateValueInDatabase(drone_direct);
-                        },
-                        onTapUp: (TapUpDetails details) {
-                          setState(() {
-                            _isLeftPressed = false;
-                            drone_direct = 0;
-                          });
-                          _updateValueInDatabaseOnRelease();
-                        },
-                        child: Image.asset(
-                          'images/left.png',
-                          width: _isLeftPressed ? 45 : 35,
-                          height: _isLeftPressed ? 45 : 35,
-                        ),
-                      ),
-                      SizedBox(width: 5),
-                      GestureDetector(
-                        onTapDown: (TapDownDetails details) {
-                          setState(() {
-                            _isUpPressed = false;
-                            _isStop = true;
-                            _isLeftPressed = false;
-                            _isRightPressed = false;
-                            _isDownPressed = false;
-                            drone_direct = 0;
-                          });
-                          _updateValueInDatabase(drone_direct);
-                        },
-                        onTapUp: (TapUpDetails details) {
-                          setState(() {
-                            _isStop = false;
-                            drone_direct = 0;
-                          });
-                          _updateValueInDatabaseOnRelease();
-                        },
-                        child: Image.asset(
-                          'images/stop.png',
-                          width: _isStop ? 45 : 35,
-                          height: _isStop ? 45 : 35,
-                        ),
-                      ),
-                      SizedBox(width: 5),
-                      GestureDetector(
-                        onTapDown: (TapDownDetails details) {
-                          setState(() {
-                            _isUpPressed = false;
-                            _isStop = false;
-                            _isLeftPressed = false;
-                            _isRightPressed = true;
-                            _isDownPressed = false;
-                            drone_direct = 2;
-                          });
-                          _updateValueInDatabase(drone_direct);
-                        },
-                        onTapUp: (TapUpDetails details) {
-                          setState(() {
-                            _isRightPressed = false;
-                            drone_direct = 0;
-                          });
-                          _updateValueInDatabaseOnRelease();
-                        },
-                        child: Image.asset(
-                          'images/right.png',
-                          width: _isRightPressed ? 45 : 35,
-                          height: _isRightPressed ? 45 : 35,
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 5),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Column(
-                        children: [
-                          GestureDetector(
-                            onTapDown: (TapDownDetails details) {
-                              setState(() {
-                                _isUpPressed = false;
-                                _isStop = false;
-                                _isLeftPressed = false;
-                                _isRightPressed = false;
-                                _isDownPressed = true;
-                                drone_direct = 4;
-                              });
-                              _updateValueInDatabase(drone_direct);
-                            },
-                            onTapUp: (TapUpDetails details) {
-                              setState(() {
-                                _isDownPressed = false;
-                                drone_direct = 0;
-                              });
-                              _updateValueInDatabaseOnRelease();
-                            },
-                            child: Image.asset(
-                              'images/down.png',
-                              width: _isDownPressed ? 45 : 35,
-                              height: _isDownPressed ? 45 : 35,
-                            ),
-                          ),
-                          SizedBox(height: 10),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-
+                      )
+                          : Card(),
+                    ]),
+              ],
             ),
-
-          ),
-
-          Positioned(
-
-            right: 16,
-
-            bottom: 16,
-
-            child: FloatingActionButton(
-backgroundColor: Colors.white,
-              elevation: 8,
-              onPressed: () {
-
-                _showInputSelectionPopup();
-
-              },
-
-              child: Image.asset('images/controll.png',width: 60,height: 60,), // Replace with your custom icon image
-            ),
-
-          ),
-
-        ],
-
-      ),
-
-
-
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.indigo[800],
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  onPressed: () => _showRoutesDialog(),
-                  child: Text(
-                    'Start Spray',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red[600],
@@ -1733,7 +2192,57 @@ backgroundColor: Colors.white,
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  onPressed: _resetMarkers,
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (BuildContext context) {
+                        return AlertDialog(
+                          title: Text(
+                            'Reset Map?',
+                            style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          content: Text(
+                            'Do you really want to reset the map?',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                            ),
+                          ),
+                          actions: [
+                            TextButton(
+                              child: Text(
+                                'Cancel',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              onPressed: () {
+                                Navigator.of(context).pop(); // Close the dialog
+                              },
+                            ),
+                            TextButton(
+                              child: Text(
+                                'Yes,Reset?',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.red,
+                                ),
+                              ),
+                              onPressed: () {
+                                Navigator.of(context).pop(); // Close the dialog
+                                _resetMarkers(); // Call the reset function
+                              },
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  },
                   child: Text(
                     'Reset Map',
                     style: GoogleFonts.poppins(
@@ -1743,6 +2252,52 @@ backgroundColor: Colors.white,
                     ),
                   ),
                 ),
+
+                // Conditionally show the Confirm Field button
+                if (_isShapeClosed && !_isConfirmed)
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green[700],
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _isConfirmed = true; // Hide this button after pressing
+                      });
+                      Selecting_Path_Direction_and_Turn(); // Call your function
+                    },
+                    child: Text(
+                      'Confirm Field',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+
+                // Conditionally show the Start Spray button
+                if (_isConfirmed || _ismanual)
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.indigo[800],
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    onPressed: () => setup_hardware(),
+                    child: Text(
+                      'Confirm Setup',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+
                 IconButton(
                   splashRadius: 5,
                   icon: ImageIcon(
@@ -1777,53 +2332,53 @@ backgroundColor: Colors.white,
                     _currentLocation == null
                         ? const Center(child: CircularProgressIndicator())
                         : GoogleMap(
-                            initialCameraPosition: _currentLocation != null
-                                ? CameraPosition(
-                                    target: LatLng(
-                                      _currentLocation!.latitude!,
-                                      _currentLocation!.longitude!,
-                                    ),
-                                    zoom: 15.0,
-                                  )
-                                : const CameraPosition(
-                                    target: LatLng(
-                                        0, 0), // Default fallback position
-                                    zoom: 2.0, // Low zoom for global view
-                                  ),
-                            markers: {
-                              ..._markers,
-                              if (_currentPosition != null)
-                                Marker(
-                                  markerId: const MarkerId('currentLocation'),
-                                  position: _currentPosition,
-                                  icon: BitmapDescriptor.defaultMarkerWithHue(
-                                      BitmapDescriptor.hueViolet),
-                                ),
-                            },
-                            polylines: _polylines,
-                            polygons: polygons,
-                            zoomGesturesEnabled: true,
-                            rotateGesturesEnabled: true,
-                            buildingsEnabled: true,
-                            scrollGesturesEnabled: true,
-                            onTap: _isCustomMode ? _onMapTap : null,
-                            onMapCreated: (controller) {
-                              _googleMapController = controller;
-                              // Camera animation is now handled separately.
-                            },
-                            gestureRecognizers: <Factory<
-                                OneSequenceGestureRecognizer>>{
-                              Factory<OneSequenceGestureRecognizer>(
-                                  () => EagerGestureRecognizer()),
-                            },
-                            myLocationEnabled: true,
-                            myLocationButtonEnabled: true,
+                      initialCameraPosition: _currentLocation != null
+                          ? CameraPosition(
+                        target: LatLng(
+                          _currentLocation!.latitude!,
+                          _currentLocation!.longitude!,
+                        ),
+                        zoom: 15.0,
+                      )
+                          : const CameraPosition(
+                        target: LatLng(
+                            0, 0), // Default fallback position
+                        zoom: 3.0, // Low zoom for global view
+                      ),
+                      markers: {
+                        ..._markers,
+                        if (_currentPosition != null)
+                          Marker(
+                            markerId: const MarkerId('currentLocation'),
+                            position: _currentPosition,
+                            icon: BitmapDescriptor.defaultMarkerWithHue(
+                                BitmapDescriptor.hueViolet),
                           ),
+                      },
+                      polylines: _polylines,
+                      polygons: polygons,
+                      zoomGesturesEnabled: true,
+                      rotateGesturesEnabled: true,
+                      buildingsEnabled: true,
+                      scrollGesturesEnabled: true,
+                      onTap: _isCustomMode ? _onMapTap : null,
+                      onMapCreated: (controller) {
+                        _googleMapController = controller;
+                        // Camera animation is now handled separately.
+                      },
+                      gestureRecognizers: <Factory<
+                          OneSequenceGestureRecognizer>>{
+                        Factory<OneSequenceGestureRecognizer>(
+                                () => EagerGestureRecognizer()),
+                      },
+                      myLocationEnabled: true,
+                      myLocationButtonEnabled: true,
+                    ),
                     Padding(
                       padding: const EdgeInsets.all(8.0),
                       child: ClipRRect(
                         borderRadius:
-                            BorderRadius.circular(30.0), // Capsule shape
+                        BorderRadius.circular(30.0), // Capsule shape
                         child: Container(
                           decoration: const BoxDecoration(
                             color: Colors.white,
@@ -1846,15 +2401,15 @@ backgroundColor: Colors.white,
                                   fontWeight: FontWeight
                                       .w600, // Replace with your font family
                                   fontSize: 14.0, // Customize label font size
-                                  color: Colors
-                                      .indigo[800], // Customize label color
+                                  color: Color(
+                                      0xFF037441), // Customize label color
                                 ),
                                 suffixIcon: IconButton(
                                   icon: const Icon(Icons.search,
                                       color:
-                                          Colors.black), // Customize icon color
+                                      Colors.black), // Customize icon color
                                   onPressed:
-                                      _hideKeyboard, // Hide keyboard on search button press
+                                  _hideKeyboard, // Hide keyboard on search button press
                                 ),
                                 contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16.0, vertical: 12.0),
@@ -1866,29 +2421,29 @@ backgroundColor: Colors.white,
                               }
                               _debounce?.cancel();
                               final completer =
-                                  Completer<List<geocoding.Placemark>>();
+                              Completer<List<geocoding.Placemark>>();
                               _debounce = Timer(const Duration(microseconds: 1),
-                                  () async {
-                                List<geocoding.Placemark> placemarks = [];
-                                try {
-                                  List<geocoding.Location> locations =
+                                      () async {
+                                    List<geocoding.Placemark> placemarks = [];
+                                    try {
+                                      List<geocoding.Location> locations =
                                       await geocoding
                                           .locationFromAddress(pattern);
-                                  if (locations.isNotEmpty) {
-                                    placemarks = await Future.wait(
-                                      locations.map((location) =>
-                                          geocoding.placemarkFromCoordinates(
-                                            location.latitude,
-                                            location.longitude,
-                                          )),
-                                    ).then((results) =>
-                                        results.expand((x) => x).toList());
-                                  }
-                                } catch (e) {
-                                  // Handle error if needed
-                                }
-                                completer.complete(placemarks);
-                              });
+                                      if (locations.isNotEmpty) {
+                                        placemarks = await Future.wait(
+                                          locations.map((location) =>
+                                              geocoding.placemarkFromCoordinates(
+                                                location.latitude,
+                                                location.longitude,
+                                              )),
+                                        ).then((results) =>
+                                            results.expand((x) => x).toList());
+                                      }
+                                    } catch (e) {
+                                      // Handle error if needed
+                                    }
+                                    completer.complete(placemarks);
+                                  });
                               return completer.future;
                             },
                             itemBuilder:
@@ -1896,16 +2451,16 @@ backgroundColor: Colors.white,
                               return ListTile(
                                 leading: const Icon(Icons.location_on,
                                     color:
-                                        Colors.green), // Customize icon color
+                                    Colors.green), // Customize icon color
                                 title: Text(
                                   suggestion.name ??
                                       'No Country/City Available',
                                   style: TextStyle(
                                     fontFamily:
-                                        GoogleFonts.poppins().fontFamily,
+                                    GoogleFonts.poppins().fontFamily,
                                     fontSize: 16.0,
                                     fontWeight:
-                                        FontWeight.w400, // Customize font size
+                                    FontWeight.w400, // Customize font size
                                     color: Colors.black, // Customize text color
                                   ),
                                 ),
@@ -1913,11 +2468,11 @@ backgroundColor: Colors.white,
                                   suggestion.locality ?? 'No locality Exists',
                                   style: TextStyle(
                                     fontFamily:
-                                        GoogleFonts.poppins().fontFamily,
+                                    GoogleFonts.poppins().fontFamily,
 
                                     fontSize: 14.0, // Customize font size
                                     color:
-                                        Colors.black54, // Customize text color
+                                    Colors.black54, // Customize text color
                                   ),
                                 ),
                               );
@@ -1928,8 +2483,8 @@ backgroundColor: Colors.white,
                                   '${suggestion.name ?? ''}, ${suggestion.locality ?? ''}';
                               try {
                                 List<geocoding.Location> locations =
-                                    await geocoding
-                                        .locationFromAddress(address);
+                                await geocoding
+                                    .locationFromAddress(address);
                                 if (locations.isNotEmpty) {
                                   final location = locations.first;
 
@@ -1951,32 +2506,6 @@ backgroundColor: Colors.white,
                         ),
                       ),
                     ),
-
-                    if (_isShapeClosed) // Conditionally show the button
-                      Positioned(
-                        top: 75,
-                        left: 160,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green[700],
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          onPressed: () {
-                            Selecting_Path_Direction_and_Turn(); // Call your function
-                          },
-                          child: Text(
-                            'Confirm Field',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-
                     if (polygons.isNotEmpty)
                       Positioned(
                         top: 70,
@@ -1986,7 +2515,7 @@ backgroundColor: Colors.white,
                           decoration: BoxDecoration(
                             color: Colors.white,
                             border: Border.all(
-                              color: Colors.blueGrey,
+                              color: Colors.indigo,
                               width: 2.0,
                             ),
                             borderRadius: BorderRadius.circular(6),
@@ -2080,6 +2609,18 @@ backgroundColor: Colors.white,
       ),
     );
   }
+  void animateToFirstMarker() {
+    if (_isCustomMode == false && _markerPositions.isNotEmpty) {
+      _googleMapController.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: _markerPositions.first, // Animate to first marker position
+            zoom: 20.0,
+          ),
+        ),
+      );
+    }
+  }
 
   void _updateRouteData() {
     try {
@@ -2110,39 +2651,6 @@ backgroundColor: Colors.white,
       print('Error updating route data: $e');
     }
   }
-
-  void _updatePolylines() {
-    _polylines.clear();
-
-    if (_markerPositions.length > 1) {
-      // Draw the polylines connecting the markers
-      for (int i = 0; i < _markerPositions.length - 1; i++) {
-        _polylines.add(Polyline(
-          polylineId: PolylineId('route$i'),
-          points: [_markerPositions[i], _markerPositions[i + 1]],
-          color: Colors.blue,
-          width: 3,
-        ));
-      }
-
-      // Check if the shape is closed by comparing the first and last marker positions
-      if (_markerPositions.first == _markerPositions.last) {
-        setState(() {
-          _isShapeClosed = true; // Set the boolean to true if the shape is closed
-        });
-      } else {
-        setState(() {
-          _isShapeClosed = false; // Set to false if the shape is not closed
-        });
-      }
-    } else {
-      setState(() {
-        _isShapeClosed = false; // If fewer than 2 markers, the shape cannot be closed
-      });
-    }
-  }
-
-
   void _onMapTap(LatLng latLng) {
     final markerId = MarkerId('M${_markers.length + 1}');
     final newMarker = Marker(
@@ -2165,7 +2673,6 @@ backgroundColor: Colors.white,
       }
     });
   }
-
 //area calculation of field
   double _calculateSphericalPolygonArea(List<LatLng> points) {
     const double radiusOfEarth = 6378137.0; // Earth's radius in meters
@@ -2349,9 +2856,4 @@ backgroundColor: Colors.white,
 
     return areaInAcres;
   }*/
-  void dispose() {
-    _debounce?.cancel();
-    super.dispose();
-  }
-
 }

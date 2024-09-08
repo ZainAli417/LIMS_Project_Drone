@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:percent_indicator/linear_percent_indicator.dart';
 import 'package:project_drone/Screens/homescreen.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -100,7 +101,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
   Set<Polygon> polygons = {};
   List<LatLng> _dronepath = [];
   double pathWidth = 10.0;
-bool _isHorizontalDirection=false;
+  bool _isHorizontalDirection=false;
   late LatLng? selectedMarker =
   _markers.isNotEmpty ? _markers.first.position : null;
 
@@ -225,9 +226,6 @@ bool _isHorizontalDirection=false;
     }
     return totalzigzagdis;
   } // Return distance in kilometers
-
-
-
   void _startMovement(List<LatLng> path, List<List<LatLng>> selectedSegments) {
     if (path.isEmpty) {
       print("Path is empty, cannot start movement");
@@ -316,227 +314,220 @@ bool _isHorizontalDirection=false;
       }
     });
   }
-void Selecting_Path_Direction_and_Turn() {
-  bool isStartingPointEmpty = false; // Validation flag for the dropdown
+  void Selecting_Path_Direction_and_Turn() {
+    bool isStartingPointEmpty = false; // Validation flag for the dropdown
 
-  showDialog(
-    context: context,
-    builder: (BuildContext context) {
-      return StatefulBuilder(
-        builder: (BuildContext context, StateSetter setState) {
-          return AlertDialog(
-            titlePadding: EdgeInsets.zero,
-            title: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.indigo[800],
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(20),
-                  topRight: Radius.circular(20),
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            return AlertDialog(
+              titlePadding: EdgeInsets.zero,
+              title: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.indigo[800],
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
                 ),
-              ),
-              child: Text(
-                'Enter settings',
-                style: GoogleFonts.poppins(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Enter Turn Length (Default 5.0m)',
+                child: Text(
+                  'Enter settings',
                   style: GoogleFonts.poppins(
                     fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.red[800],
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
                   ),
                 ),
-                const SizedBox(height: 5),
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.indigo),
-                    borderRadius: BorderRadius.circular(8),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Enter Turn Length (Default 5.0m)',
+                    style: GoogleFonts.poppins(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.red[800],
+                    ),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: TextField(
-                    keyboardType: TextInputType.number,
-                    onChanged: (value) {
-                      setState(() {
-                        _turnLength = double.tryParse(value) ?? 5.0;
-                      });
-                    },
-                    decoration: InputDecoration(
-                      border: InputBorder.none,
-                      hintText: _turnLength.toString(),
-                      hintStyle: GoogleFonts.poppins(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black45,
+                  const SizedBox(height: 5),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.indigo),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: TextField(
+                      keyboardType: TextInputType.number,
+                      onChanged: (value) {
+                        setState(() {
+                          _turnLength = double.tryParse(value) ?? 5.0;
+                        });
+                      },
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        hintText: _turnLength.toString(),
+                        hintStyle: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black45,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 10),
-                Column(
-                  children: [
-                    Text(
-                      'Choose Path Direction',
-                      style: GoogleFonts.poppins(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.red[800],
+                  const SizedBox(height: 10),
+                  Column(
+                    children: [
+                      Text(
+                        'Choose Path Direction',
+                        style: GoogleFonts.poppins(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.red[800],
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          Radio<PathDirection>(
+                            value: PathDirection.horizontal,
+                            groupValue: _selectedDirection,
+                            onChanged: (PathDirection? value) {
+                              setState(() {
+                                _selectedDirection = value!;
+                                _isHorizontalDirection = (value == PathDirection.horizontal);
+                              });
+                            },
+                          ),
+                          Text(
+                            'Horizontal',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black,
+                            ),
+                          ),
+                          Radio<PathDirection>(
+                            value: PathDirection.vertical,
+                            groupValue: _selectedDirection,
+                            onChanged: (PathDirection? value) {
+                              setState(() {
+                                _selectedDirection = value!;
+                                _isHorizontalDirection = (value == PathDirection.horizontal);
+                              });
+                            },
+                          ),
+                          Text(
+                            'Vertical',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Choose Starting Point',
+                    style: GoogleFonts.poppins(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.red[800],
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.indigo),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: DropdownButton<LatLng>(
+                      value: _selectedStartingPoint,
+                      isExpanded: true,
+                      items: (_isCustomMode
+                          ? _markers.sublist(0, _markers.length)
+                          : _markers.sublist(0, _markers.length - 1))
+                          .map((marker) {
+                        return DropdownMenuItem<LatLng>(
+                          value: marker.position,
+                          child: Text(marker.markerId.value),
+                        );
+                      }).toList(),
+                      onChanged: (LatLng? newValue) {
+                        setState(() {
+                          _selectedStartingPoint = newValue;
+                          isStartingPointEmpty = false; // Reset error state
+                        });
+                      },
+                    ),
+                  ),
+                  if (isStartingPointEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Text(
+                        'Starting point is Required',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.red[600],
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 5),
-                    Row(
-                      children: [
-                        Radio<PathDirection>(
-                          value: PathDirection.horizontal,
-                          groupValue: _selectedDirection,
-                          onChanged: (PathDirection? value) {
-                            setState(() {
-                              _selectedDirection = value!;
-                              _isHorizontalDirection = (value == PathDirection.horizontal);
-                            });
-                          },
-                        ),
-                        Text(
-                          'Horizontal',
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black,
-                          ),
-                        ),
-                        Radio<PathDirection>(
-                          value: PathDirection.vertical,
-                          groupValue: _selectedDirection,
-                          onChanged: (PathDirection? value) {
-                            setState(() {
-                              _selectedDirection = value!;
-                              _isHorizontalDirection = (value == PathDirection.horizontal);
-                            });
-                          },
-                        ),
-                        Text(
-                          'Vertical',
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black,
-                          ),
-                        ),
-                      ],
+                ],
+              ),
+              actions: <Widget>[
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.indigo[800],
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Choose Starting Point',
-                  style: GoogleFonts.poppins(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.red[800],
                   ),
-                ),
-                const SizedBox(height: 5),
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.indigo),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: DropdownButton<LatLng>(
-                    value: _selectedStartingPoint,
-                    isExpanded: true,
-                    items: (_isCustomMode
-                        ? _markers.sublist(0, _markers.length)
-                        : _markers.sublist(0, _markers.length - 1))
-                        .map((marker) {
-                      return DropdownMenuItem<LatLng>(
-                        value: marker.position,
-                        child: Text(marker.markerId.value),
-                      );
-                    }).toList(),
-                    onChanged: (LatLng? newValue) {
+                  onPressed: () {
+                    if (_selectedStartingPoint == null) {
                       setState(() {
-                        _selectedStartingPoint = newValue;
-                        isStartingPointEmpty = false; // Reset error state
+                        isStartingPointEmpty = true; // Show error message
                       });
-                    },
-                  ),
-                ),
-                if (isStartingPointEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
+                    } else {
+                      Navigator.of(context).pop();
+                      extractLatLngPoints();
+                      if (_selectedDirection == PathDirection.vertical) {
+                        _isHorizontalDirection = false; // Set direction flag
+                        dronepath_Vertical(
+                            polygonPoints, pathWidth, _selectedStartingPoint!);
+                      } else {
+                        _isHorizontalDirection = true; // Set direction flag
+                        dronepath_Horizontal(
+                            polygonPoints, pathWidth, _selectedStartingPoint!);
+                      }
+                      _closePolygon(_turnLength);
+                    }
+                  },
+                  child: Center(
                     child: Text(
-                      'Starting point is Required',
+                      'Generate Path',
                       style: GoogleFonts.poppins(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
-                        color: Colors.red[600],
+                        color: Colors.white,
                       ),
                     ),
                   ),
+                ),
               ],
-            ),
-            actions: <Widget>[
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.indigo[800],
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                onPressed: () {
-                  if (_selectedStartingPoint == null) {
-                    setState(() {
-                      isStartingPointEmpty = true; // Show error message
-                    });
-                  } else {
-                    Navigator.of(context).pop();
-                    extractLatLngPoints();
-                    if (_selectedDirection == PathDirection.vertical) {
-                      _isHorizontalDirection = false; // Set direction flag
-                      dronepath_Vertical(
-                          polygonPoints, pathWidth, _selectedStartingPoint!);
-                    } else {
-                      _isHorizontalDirection = true; // Set direction flag
-                      dronepath_Horizontal(
-                          polygonPoints, pathWidth, _selectedStartingPoint!);
-                    }
-                    _closePolygon(_turnLength);
-                  }
-                },
-                child: Center(
-                  child: Text(
-                    'Generate Path',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      );
-    },
-  );
-}
-
-
-
-
-
-
-
+            );
+          },
+        );
+      },
+    );
+  }
   void _onPathComplete() {
     // Clear all paths and stop movement
     setState(() {
@@ -1018,6 +1009,7 @@ void Selecting_Path_Direction_and_Turn() {
                         ),
                       ),
                       onPressed: () {
+                        _ismanual = false;
                         // Validation: Ensure at least one route is selected
                         if (selectedSegments.isEmpty) {
                           _showWarningDialog(
@@ -1212,6 +1204,12 @@ void Selecting_Path_Direction_and_Turn() {
       }
     }
 
+    List<LatLng> dronePath = straightPaths.expand((segment) => segment).toList();
+    dronePath.insert(0, startPoint);
+
+    // Calculate the total zigzag path distance
+    double totalDistancezigzagKm = _calculateTotalDistanceZIGAG(dronePath);
+
     setState(() {
       _dronepath = straightPaths
           .expand((segment) => segment)
@@ -1222,7 +1220,11 @@ void Selecting_Path_Direction_and_Turn() {
         color: Colors.red,
         width: 3,
       ));
-    });
+      totalZigzagPathKm = totalDistancezigzagKm; // Update the total zigzag distance
+
+    }
+
+    );
   }
   void dronepath_Vertical(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
@@ -1338,10 +1340,9 @@ void Selecting_Path_Direction_and_Turn() {
       polygonPoints = polygons.first.points.toList();
     }
   }
-  
-  
   Future<void> _closePolygon(double turnLength) async {
     setState(() {
+      _ismanual=true;
       _polylines.clear();
       polygons.add(Polygon(
         polygonId: const PolygonId('polygon'),
@@ -1468,7 +1469,7 @@ void Selecting_Path_Direction_and_Turn() {
               onPressed: () {
                 setState(() {
                   _isCustomMode = true;
-                  _ismanual = true;
+                 // _ismanual = true;
                   _selectedMethod =
                   'Placing Markers Manually'; // Store selection
                 });
@@ -1911,6 +1912,13 @@ void Selecting_Path_Direction_and_Turn() {
   }
 //UI BUILD
   @override
+
+
+
+
+
+//UI BUILD
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
@@ -2011,177 +2019,384 @@ void Selecting_Path_Direction_and_Turn() {
                 ),
               ),
             ),
-            Stack(
-              children: [
-                Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      const Card(
-                        //fields inside map comes here
+            Column(
+                children: [
+                  // Conditional widget loading with `Visibility`
+                  if (polygons.isNotEmpty)
+                    Card(
+                      color: Colors.white,
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: const BorderSide(
+                            color: Colors.indigo, width: 2),
                       ),
-                      widget.isManualControl
-                          ? Column(
+                      child: Padding(
+                        padding: const EdgeInsets.all(10.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Row 1: Totality fields in containers
+                            Wrap(
+                              spacing: 8, // Horizontal space between items
+                              runSpacing: 8, // Vertical space between rows
+                              children: [
+                                Container(
+                                  padding: EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.cyan,
+                                    borderRadius: BorderRadius.circular(5),
+                                  ),
+                                  child: Text(
+                                    "Area: ${_calculateSphericalPolygonArea(_markerPositions).toStringAsFixed(2)} acres",
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                      fontFamily: GoogleFonts.poppins().fontFamily,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.indigo[800],
+                                    borderRadius: BorderRadius.circular(5),
+                                  ),
+                                  child: Text(
+                                    "Total Dis.: ${totalZigzagPathKm.toStringAsFixed(2)} Km",
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                      fontFamily: GoogleFonts.poppins().fontFamily,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber[900],
+                                    borderRadius: BorderRadius.circular(5),
+                                  ),
+                                  child: Text(
+                                    "Spray Dis.: ${_totalDistanceKM.toStringAsFixed(2)} Km",
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                      fontFamily: GoogleFonts.poppins().fontFamily,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red,
+                                    borderRadius: BorderRadius.circular(5),
+                                  ),
+                                  child: Text(
+                                    "Spray time: ${timeduration.toStringAsFixed(2)} min",
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                      fontFamily: GoogleFonts.poppins().fontFamily,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.deepPurple,
+                                    borderRadius: BorderRadius.circular(5),
+                                  ),
+                                  child: Text(
+                                    "UGV Speed: 10m/s",
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                      fontFamily: GoogleFonts.poppins().fontFamily,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 10),
+
+                            // Row 2: Progress bars for remaining fields
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Rem Spray label and progress bar
+                                Row(
+                                  children: [
+                                    Text(
+                                      "Rem Spray:",
+                                      style: TextStyle(
+                                        color: Colors.amber[900],
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                        fontFamily: GoogleFonts.poppins().fontFamily,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: AnimatedOpacity(
+                                        duration: const Duration(seconds: 1),
+                                        opacity: 1,
+                                        child: LinearPercentIndicator(
+                                          lineHeight: 10,
+                                          percent: _remainingDistanceKM_SelectedPath / _totalDistanceKM,
+                                          linearGradient: const LinearGradient(
+                                            colors: [Colors.green, Colors.red],
+                                          ),
+                                          backgroundColor: Colors.grey[400],
+                                          // Add borderRadius to make the bar rounded
+                                          barRadius: const Radius.circular(10),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+
+                                const SizedBox(height: 8),
+
+                                // Rem Dis label and progress bar
+                                Row(
+                                  children: [
+                                    Text(
+                                      "Rem Dis:",
+                                      style: TextStyle(
+                                        color: Colors.indigo[800],
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                        fontFamily: GoogleFonts.poppins().fontFamily,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: AnimatedOpacity(
+                                        duration: const Duration(seconds: 1),
+                                        opacity: 1,
+                                        child: LinearPercentIndicator(
+                                          lineHeight: 10,
+                                          percent: _remainingDistanceKM_TotalPath / totalZigzagPathKm,
+                                          linearGradient: const LinearGradient(
+                                            colors: [Colors.green, Colors.red],
+                                          ),
+                                          backgroundColor: Colors.grey[400],
+                                          barRadius: const Radius.circular(10),
+
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+
+                                // Rem Time label and progress bar
+                                Row(
+                                  children: [
+                                    Text(
+                                      "Rem Time:",
+                                      style: TextStyle(
+                                        color: Colors.red,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                        fontFamily: GoogleFonts.poppins().fontFamily,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: AnimatedOpacity(
+                                        duration: const Duration(seconds: 1),
+                                        opacity:1,
+                                        child: LinearPercentIndicator(
+                                          lineHeight: 10,
+                                          percent: TLM / timeduration,
+                                          linearGradient: const LinearGradient(
+                                            colors: [Colors.green, Colors.red],
+                                          ),
+                                          backgroundColor: Colors.grey[400],
+                                          barRadius: const Radius.circular(10),
+
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  widget.isManualControl
+                      ? Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Column(
-                                children: [
-                                  GestureDetector(
-                                    onTapDown: (TapDownDetails details) {
-                                      setState(() {
-                                        _isUpPressed = true;
-                                        _isLeftPressed = false;
-                                        _isRightPressed = false;
-                                        _isDownPressed = false;
-                                        drone_direct = 3;
-                                      });
-                                      _updateValueInDatabase(
-                                          drone_direct);
-                                    },
-                                    onTapUp: (TapUpDetails details) {
-                                      setState(() {
-                                        _isUpPressed = false;
-                                        drone_direct = 0;
-                                      });
-                                      _updateValueInDatabaseOnRelease();
-                                    },
-                                    child: Image.asset(
-                                      'images/up.png',
-                                      width: _isUpPressed ? 45 : 35,
-                                      height: _isUpPressed ? 45 : 35,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: 5),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                          Column(
                             children: [
                               GestureDetector(
                                 onTapDown: (TapDownDetails details) {
                                   setState(() {
-                                    _isUpPressed = false;
-                                    _isLeftPressed = true;
+                                    _isUpPressed = true;
+                                    _isLeftPressed = false;
                                     _isRightPressed = false;
                                     _isDownPressed = false;
-                                    drone_direct = 1;
+                                    drone_direct = 3;
                                   });
-                                  _updateValueInDatabase(drone_direct);
+                                  _updateValueInDatabase(
+                                      drone_direct);
                                 },
                                 onTapUp: (TapUpDetails details) {
                                   setState(() {
-                                    _isLeftPressed = false;
+                                    _isUpPressed = false;
                                     drone_direct = 0;
                                   });
                                   _updateValueInDatabaseOnRelease();
                                 },
                                 child: Image.asset(
-                                  'images/left.png',
-                                  width: _isLeftPressed ? 45 : 35,
-                                  height: _isLeftPressed ? 45 : 35,
+                                  'images/up.png',
+                                  width: _isUpPressed ? 45 : 35,
+                                  height: _isUpPressed ? 45 : 35,
                                 ),
-                              ),
-                              SizedBox(width: 5),
-                              GestureDetector(
-                                onTapDown: (TapDownDetails details) {
-                                  setState(() {
-                                    _isUpPressed = false;
-                                    _isStop = true;
-                                    _isLeftPressed = false;
-                                    _isRightPressed = false;
-                                    _isDownPressed = false;
-                                    drone_direct = 0;
-                                  });
-                                  _updateValueInDatabase(drone_direct);
-                                },
-                                onTapUp: (TapUpDetails details) {
-                                  setState(() {
-                                    _isStop = false;
-                                    drone_direct = 0;
-                                  });
-                                  _updateValueInDatabaseOnRelease();
-                                },
-                                child: Image.asset(
-                                  'images/stop.png',
-                                  width: _isStop ? 45 : 35,
-                                  height: _isStop ? 45 : 35,
-                                ),
-                              ),
-                              SizedBox(width: 5),
-                              GestureDetector(
-                                onTapDown: (TapDownDetails details) {
-                                  setState(() {
-                                    _isUpPressed = false;
-                                    _isStop = false;
-                                    _isLeftPressed = false;
-                                    _isRightPressed = true;
-                                    _isDownPressed = false;
-                                    drone_direct = 2;
-                                  });
-                                  _updateValueInDatabase(drone_direct);
-                                },
-                                onTapUp: (TapUpDetails details) {
-                                  setState(() {
-                                    _isRightPressed = false;
-                                    drone_direct = 0;
-                                  });
-                                  _updateValueInDatabaseOnRelease();
-                                },
-                                child: Image.asset(
-                                  'images/right.png',
-                                  width: _isRightPressed ? 45 : 35,
-                                  height: _isRightPressed ? 45 : 35,
-                                ),
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: 5),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Column(
-                                children: [
-                                  GestureDetector(
-                                    onTapDown: (TapDownDetails details) {
-                                      setState(() {
-                                        _isUpPressed = false;
-                                        _isStop = false;
-                                        _isLeftPressed = false;
-                                        _isRightPressed = false;
-                                        _isDownPressed = true;
-                                        drone_direct = 4;
-                                      });
-                                      _updateValueInDatabase(
-                                          drone_direct);
-                                    },
-                                    onTapUp: (TapUpDetails details) {
-                                      setState(() {
-                                        _isDownPressed = false;
-                                        drone_direct = 0;
-                                      });
-                                      _updateValueInDatabaseOnRelease();
-                                    },
-                                    child: Image.asset(
-                                      'images/down.png',
-                                      width: _isDownPressed ? 45 : 35,
-                                      height: _isDownPressed ? 45 : 35,
-                                    ),
-                                  ),
-                                  SizedBox(height: 10),
-                                ],
                               ),
                             ],
                           ),
                         ],
-                      )
-                          : Card(),
-                    ]),
-              ],
-            ),
+                      ),
+                      SizedBox(height: 5),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          GestureDetector(
+                            onTapDown: (TapDownDetails details) {
+                              setState(() {
+                                _isUpPressed = false;
+                                _isLeftPressed = true;
+                                _isRightPressed = false;
+                                _isDownPressed = false;
+                                drone_direct = 1;
+                              });
+                              _updateValueInDatabase(drone_direct);
+                            },
+                            onTapUp: (TapUpDetails details) {
+                              setState(() {
+                                _isLeftPressed = false;
+                                drone_direct = 0;
+                              });
+                              _updateValueInDatabaseOnRelease();
+                            },
+                            child: Image.asset(
+                              'images/left.png',
+                              width: _isLeftPressed ? 45 : 35,
+                              height: _isLeftPressed ? 45 : 35,
+                            ),
+                          ),
+                          SizedBox(width: 5),
+                          GestureDetector(
+                            onTapDown: (TapDownDetails details) {
+                              setState(() {
+                                _isUpPressed = false;
+                                _isStop = true;
+                                _isLeftPressed = false;
+                                _isRightPressed = false;
+                                _isDownPressed = false;
+                                drone_direct = 0;
+                              });
+                              _updateValueInDatabase(drone_direct);
+                            },
+                            onTapUp: (TapUpDetails details) {
+                              setState(() {
+                                _isStop = false;
+                                drone_direct = 0;
+                              });
+                              _updateValueInDatabaseOnRelease();
+                            },
+                            child: Image.asset(
+                              'images/stop.png',
+                              width: _isStop ? 45 : 35,
+                              height: _isStop ? 45 : 35,
+                            ),
+                          ),
+                          SizedBox(width: 5),
+                          GestureDetector(
+                            onTapDown: (TapDownDetails details) {
+                              setState(() {
+                                _isUpPressed = false;
+                                _isStop = false;
+                                _isLeftPressed = false;
+                                _isRightPressed = true;
+                                _isDownPressed = false;
+                                drone_direct = 2;
+                              });
+                              _updateValueInDatabase(drone_direct);
+                            },
+                            onTapUp: (TapUpDetails details) {
+                              setState(() {
+                                _isRightPressed = false;
+                                drone_direct = 0;
+                              });
+                              _updateValueInDatabaseOnRelease();
+                            },
+                            child: Image.asset(
+                              'images/right.png',
+                              width: _isRightPressed ? 45 : 35,
+                              height: _isRightPressed ? 45 : 35,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 5),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Column(
+                            children: [
+                              GestureDetector(
+                                onTapDown: (TapDownDetails details) {
+                                  setState(() {
+                                    _isUpPressed = false;
+                                    _isStop = false;
+                                    _isLeftPressed = false;
+                                    _isRightPressed = false;
+                                    _isDownPressed = true;
+                                    drone_direct = 4;
+                                  });
+                                  _updateValueInDatabase(
+                                      drone_direct);
+                                },
+                                onTapUp: (TapUpDetails details) {
+                                  setState(() {
+                                    _isDownPressed = false;
+                                    drone_direct = 0;
+                                  });
+                                  _updateValueInDatabaseOnRelease();
+                                },
+                                child: Image.asset(
+                                  'images/down.png',
+                                  width: _isDownPressed ? 45 : 35,
+                                  height: _isDownPressed ? 45 : 35,
+                                ),
+                              ),
+                              SizedBox(height: 10),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  )
+                      : Container(),
+                ]),
+
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
@@ -2506,6 +2721,8 @@ void Selecting_Path_Direction_and_Turn() {
                         ),
                       ),
                     ),
+
+/*
                     if (polygons.isNotEmpty)
                       Positioned(
                         top: 70,
@@ -2599,6 +2816,8 @@ void Selecting_Path_Direction_and_Turn() {
                           ),
                         ),
                       ),
+
+                    */
                   ],
                 ),
               ),
@@ -2609,6 +2828,7 @@ void Selecting_Path_Direction_and_Turn() {
       ),
     );
   }
+
   void animateToFirstMarker() {
     if (_isCustomMode == false && _markerPositions.isNotEmpty) {
       _googleMapController.animateCamera(

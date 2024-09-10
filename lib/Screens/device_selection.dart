@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart'; // Add Firestore package
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+import '../Constant/ISSAASProvider.dart';
 import 'homescreen.dart';
 
 class DeviceSelection extends StatefulWidget {
@@ -57,11 +59,11 @@ class _DeviceSelectionState extends State<DeviceSelection>
     if (user != null) {
       try {
         // Fetch farmer's document from Firestore
-        final DocumentSnapshot<
-            Map<String, dynamic>> farmerDoc = await FirebaseFirestore.instance
-            .collection('Farmer')
-            .doc(user.uid) // Use user.uid to fetch the document
-            .get();
+        final DocumentSnapshot<Map<String, dynamic>> farmerDoc =
+            await FirebaseFirestore.instance
+                .collection('Farmer')
+                .doc(user.uid) // Use user.uid to fetch the document
+                .get();
 
         // Check if document exists
         if (farmerDoc.exists && farmerDoc.data() != null) {
@@ -85,6 +87,7 @@ class _DeviceSelectionState extends State<DeviceSelection>
     _timer.cancel(); // Cancel the timer when the widget is disposed
     super.dispose();
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -97,275 +100,397 @@ class _DeviceSelectionState extends State<DeviceSelection>
             ),
           ),
           Center(
-            child: SlideTransition(
-              position: _slideAnimation,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10.0),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 1.0, sigmaY: 1.0),
-                  child: Card(
-                    color: Colors.white.withOpacity(0.55),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16.0),
-                    ),
-                    elevation: 6,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF037441),
-                            borderRadius: BorderRadius.only(
-                              topLeft: Radius.circular(16.0),
-                              topRight: Radius.circular(16.0),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              // Left Side: Avatar
-                              CircleAvatar(
-                                radius: 24,
-                                backgroundImage: NetworkImage(
-                                  _farmerData?['avatarUrl'] ??
-                                      'https://firebasestorage.googleapis.com/v0/b/unisoft-tmp.appspot.com/o/Default%2Fdummy-profile.png?alt=media&token=ebbb29f7-0ab8-4437-b6d5-6b2e4cfeaaf7',
+            child: Column(
+              children: [
+                SizedBox(height: 50), // Add space above the logo
+                Image.asset(
+                  'images/logo.png', // Your logo image
+                  width: 230,
+                  height: 230,
+                ),
+                SizedBox(height: 20), // Add space above the logo
+
+                SlideTransition(
+                  position: _slideAnimation,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10.0),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 0, sigmaY: 0),
+                      child: Card(
+                        color: Colors.white.withOpacity(0.55),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16.0),
+                        ),
+                        elevation: 6,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 10, horizontal: 10),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF037441),
+                                borderRadius: BorderRadius.only(
+                                  topLeft: Radius.circular(16.0),
+                                  topRight: Radius.circular(16.0),
                                 ),
                               ),
-                              // Center: Name
-                              Expanded(
-                                child: Center(
-                                  child: Text(
-                                    'Welcome, ${_farmerData?['Name'] ?? ''}',
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  // Left Side: Avatar
+                                  CircleAvatar(
+                                    radius: 24,
+                                    backgroundImage: NetworkImage(
+                                      _farmerData?['avatarUrl'] ??
+                                          'https://firebasestorage.googleapis.com/v0/b/unisoft-tmp.appspot.com/o/Default%2Fdummy-profile.png?alt=media&token=ebbb29f7-0ab8-4437-b6d5-6b2e4cfeaaf7',
+                                    ),
+                                  ),
+                                  // Center: Name
+                                  Expanded(
+                                    child: Center(
+                                      child: Text(
+                                        'Welcome, ${_farmerData?['Name'] ?? ''}',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ),
+                                  // Right Side: Email
+                                  Text(
+                                    _farmerData?['email'] ?? '',
                                     style: GoogleFonts.poppins(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
                                       color: Colors.white,
                                     ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                ),
-                              ),
-                              // Right Side: Email
-                              Text(
-                                _farmerData?['email'] ?? '',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.white,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        // Conditionally display content
-                        _devices.isNotEmpty
-                            ? Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Conditional text
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 15.0),
-                              child: Center(
-                                child: RichText(
-                                  text: TextSpan(
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                      color: Color(0xFF037441),
-                                    ),
-                                    children: const [
-                                      TextSpan(text: "The following LIMS devices are registered with this account"),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            // Device Table
-                            Padding(
-                              padding: const EdgeInsets.all(15.0),
-                              child: Table(
-                                border: TableBorder.all(color: Colors.black87),
-                                columnWidths: const {
-                                  0: FlexColumnWidth(2),
-                                  1: FlexColumnWidth(2),
-                                  2: FlexColumnWidth(2),
-                                  3: FlexColumnWidth(1),
-                                },
-                                children: [
-                                  // Table header
-                                  TableRow(
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey[300],
-                                    ),
-                                    children: const [
-                                      Padding(
-                                        padding: EdgeInsets.fromLTRB(5, 10, 5, 10),
-                                        child: Center(
-                                          child: Text(
-                                            "Device ID",
-                                            style: TextStyle(fontWeight: FontWeight.bold),
-                                          ),
-                                        ),
-                                      ),
-                                      Padding(
-                                        padding: EdgeInsets.fromLTRB(5, 10, 5, 10),
-                                        child: Center(
-                                          child: Text(
-                                            "Device Name",
-                                            style: TextStyle(fontWeight: FontWeight.bold),
-                                          ),
-                                        ),
-                                      ),
-                                      Padding(
-                                        padding: EdgeInsets.fromLTRB(5, 10, 5, 10),
-                                        child: Center(
-                                          child: Text(
-                                            "Device Type",
-                                            style: TextStyle(fontWeight: FontWeight.bold),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  // Table rows with device data
-                                  for (var device in _devices)
-                                    TableRow(
-                                      children: [
-                                        Center(
-                                          child: Padding(
-                                            padding: EdgeInsets.fromLTRB(5, 10, 5, 10),
-                                            child: Text(
-                                              device['device_Id'],
-                                              style: GoogleFonts.poppins(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w500,
-                                                color: Colors.black87,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        Center(
-                                          child: Padding(
-                                            padding: EdgeInsets.fromLTRB(5, 10, 5, 10),
-                                            child: Text(
-                                              device['device_Name'],
-                                              style: GoogleFonts.poppins(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w500,
-                                                color: Colors.black87,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        Center(
-                                          child: Column(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            crossAxisAlignment: CrossAxisAlignment.center,
-                                            children: [
-                                              Padding(
-                                                padding: const EdgeInsets.all(2.0),
-                                                child: Text(
-                                                  device['device_Type'] ?? "Unknown",
-                                                  style: GoogleFonts.poppins(
-                                                    fontSize: 14,
-                                                    fontWeight: FontWeight.w500,
-                                                    color: Colors.black87,
-                                                  ),
-                                                ),
-                                              ),
-                                              Padding(
-                                                padding: const EdgeInsets.fromLTRB(5, 2, 2, 2),
-                                                child: ElevatedButton(
-                                                  onPressed: () {
-                                                    Navigator.pushReplacement(
-                                                      context,
-                                                      MaterialPageRoute(builder: (context) => const MyHomePage()),
-                                                    );
-                                                  },
-                                                  style: ElevatedButton.styleFrom(
-                                                    backgroundColor: const Color(0xFF037441),
-                                                    padding: const EdgeInsets.symmetric(
-                                                      horizontal: 20,
-                                                      vertical: 10,
-                                                    ),
-                                                    shape: RoundedRectangleBorder(
-                                                      borderRadius: BorderRadius.circular(8),
-                                                    ),
-                                                  ),
-                                                  child: Text(
-                                                    "Connect",
-                                                    style: GoogleFonts.poppins(
-                                                      fontSize: 13,
-                                                      color: Colors.white,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
                                 ],
                               ),
                             ),
-                          ],
-                        )
-                            : Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              "You Do Not Have Purchased Any Device",
-                              style: GoogleFonts.poppins(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFFC11927),
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 20),
-                            ElevatedButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (context) => MyHomePage()), // Adjust the navigation as needed
-                                );
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF037441),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 20, vertical: 10),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                              child: Text(
-                                "Use Our Software Solution",
-                                style: GoogleFonts.poppins(
-                                  fontSize: 13,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 20),
+                            const SizedBox(height: 10),
+                            // Conditionally display content
+                            _devices.isNotEmpty
+                                ? Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      // Conditional text
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 15.0),
+                                        child: Center(
+                                          child: RichText(
+                                            text: TextSpan(
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w500,
+                                                color: Color(0xFF037441),
+                                              ),
+                                              children: const [
+                                                TextSpan(
+                                                    text:
+                                                        "The following LIMS devices are registered with this account"),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      // Device Table
+                                      Padding(
+                                        padding: const EdgeInsets.all(15.0),
+                                        child: Column(
+                                          children: [
+                                            Card(
+                                              elevation:
+                                                  4, // Elevation to create shadow effect
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(
+                                                        15), // Rounded corners
+                                              ),
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.all(8.0),
+                                                child: Table(
+                                                  border: TableBorder.all(
+                                                    color: Colors
+                                                        .black87, // Border color for inside lines
+                                                    width: 1, // Border width
+                                                  ),
+                                                  columnWidths: const {
+                                                    0: FlexColumnWidth(2),
+                                                    1: FlexColumnWidth(2),
+                                                    2: FlexColumnWidth(2),
 
+                                                  },
+                                                  children: [
+                                                    // Table header with curved top border
+                                                    TableRow(
+                                                      decoration: BoxDecoration(
+                                                        borderRadius:
+                                                            const BorderRadius.only(
+                                                          topLeft:
+                                                              Radius.circular(
+                                                                  15),
+                                                          topRight:
+                                                              Radius.circular(
+                                                                  15),
+                                                        ),
+                                                        color: Colors.grey[100],
+                                                      ),
+                                                      children: [
+                                                        Padding(
+                                                          padding: const EdgeInsets
+                                                              .fromLTRB(
+                                                                  10,20,10,20), // Reduced padding
+                                                          child: Center(
+                                                            child: Text(
+                                                              "ID",
+                                                              style: GoogleFonts
+                                                                  .poppins(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w700,
+                                                                color: Colors.black87,
+                                                                fontSize: 14,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        Padding(
+                                                          padding: const EdgeInsets
+                                                              .fromLTRB(
+                                                              10,20,10,10), // Reduced padding
+                                                          child: Center(
+                                                            child: Text(
+                                                              "Name",
+                                                              style: GoogleFonts
+                                                                  .poppins(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w700,
+                                                                fontSize: 14,
+                                                                color: Colors.black87,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        Padding(
+                                                          padding: const EdgeInsets
+                                                              .fromLTRB(
+                                                              10,20,10,10),  // Reduced padding
+                                                          child: Center(
+                                                            child: Text(
+                                                              "Type",
+                                                              style: GoogleFonts
+                                                                  .poppins(
+                                                                fontSize:
+                                                                13,
+                                                                fontWeight: FontWeight.w700,
+                                                                color: Colors
+                                                                    .black87,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    // Table rows with device data
+                                                    for (var device in _devices)
+                                                      TableRow(
+                                                        children: [
+                                                          Padding(
+                                                            padding: const EdgeInsets
+                                                                .fromLTRB(
+                                                                10,20,10,10),  // Reduced padding
+                                                            child: Center(
+                                                              child: Text(
+                                                                device[
+                                                                    'device_Id'],
+                                                                style:
+                                                                    GoogleFonts
+                                                                        .poppins(
+                                                                  fontSize: 14,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w500,
+                                                                  color: Colors
+                                                                      .black87,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          Padding(
+                                                            padding: const EdgeInsets
+                                                                .fromLTRB(
+                                                                10,20,10,10),  // Reduced padding
+                                                            child: Center(
+                                                              child: Text(
+                                                                device[
+                                                                    'device_Name'],
+                                                                style:
+                                                                    GoogleFonts
+                                                                        .poppins(
+                                                                  fontSize: 14,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w500,
+                                                                  color: Colors
+                                                                      .black87,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          Padding(
+                                                            padding: const EdgeInsets
+                                                                .symmetric(
+                                                                    vertical:
+                                                                        10), // Reduced padding
+                                                            child: Center(
+                                                              child: Column(
+                                                                mainAxisAlignment:
+                                                                    MainAxisAlignment
+                                                                        .start,
+                                                                crossAxisAlignment:
+                                                                    CrossAxisAlignment
+                                                                        .center,
+                                                                children: [
+                                                                  Text(
+                                                                    device['device_Type'] ??
+                                                                        "Unknown",
+                                                                    style: GoogleFonts
+                                                                        .poppins(
+                                                                      fontSize:
+                                                                          14,
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .w500,
+                                                                      color: Colors
+                                                                          .black87,
+                                                                    ),
+                                                                  ),
+                                                                  const SizedBox(
+                                                                      height:
+                                                                          10),
+                                                                  ElevatedButton(
+                                                                    onPressed:
+                                                                        () {
+                                                                      Navigator
+                                                                          .pushReplacement(
+                                                                        context,
+                                                                        MaterialPageRoute(
+                                                                            builder: (context) =>
+                                                                                const MyHomePage()),
+                                                                      );
+                                                                    },
+                                                                    style: ElevatedButton
+                                                                        .styleFrom(
+                                                                      backgroundColor:
+                                                                          const Color(
+                                                                              0xFF037441),
+                                                                      padding:
+                                                                          const EdgeInsets
+                                                                              .symmetric(
+                                                                        horizontal:
+                                                                            10,
+                                                                        vertical:
+                                                                            8,
+                                                                      ),
+                                                                      shape:
+                                                                          RoundedRectangleBorder(
+                                                                        borderRadius:
+                                                                            BorderRadius.circular(10),
+                                                                      ),
+                                                                    ),
+                                                                    child: Text(
+                                                                      "Connect",
+                                                                      style: GoogleFonts
+                                                                          .poppins(
+                                                                        fontSize:
+                                                                            13,
+                                                                        color: Colors
+                                                                            .white,
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        "You Do Not Have Purchased Any Device",
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w500,
+                                          color: Color(0xFFC11927),
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 20),
+                                      ElevatedButton(
+
+                                        onPressed: () {
+                                          context.read<ISSAASProvider>().setIsSaas(true); // Set ISSAAS state to true
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (context) => const MyHomePage(), // Pass the boolean value
+                                            ),
+                                          );
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF037441),
+                                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          "Use Our Software Solution",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 13,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+
+
+                                      const SizedBox(height: 20),
+                                    ],
+                                  ),
                           ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
           ),
         ],
       ),
     );
   }
-
 }

@@ -6,6 +6,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:location/location.dart';
 import 'package:project_drone/Screens/device_selection.dart';
 import 'package:provider/provider.dart';
+import 'Constant/ISSAASProvider.dart';
 import 'Constant/forget_password_provider.dart';
 import 'Constant/login_provider.dart';
 import 'Constant/splash_provider.dart';
@@ -39,6 +40,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => SplashProvider()),
         ChangeNotifierProvider(create: (_) => LoginProvider()),
         ChangeNotifierProvider(create: (_) => ForgotPasswordProvider()),
+        ChangeNotifierProvider(create: (_) => ISSAASProvider()),
+
       ],
       child: MaterialApp(
         title: 'Project Drone',

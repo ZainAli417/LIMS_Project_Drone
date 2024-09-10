@@ -157,6 +157,7 @@ class _MapPageState extends State<MapPage> {
                   borderRadius: BorderRadius.circular(12.0),
                   color: Colors.grey[700], // Adjusted color
                 ),
+                height: 200,
                 child: Stack(
                   alignment: AlignmentDirectional.bottomEnd,
                   children: [
@@ -180,7 +181,6 @@ class _MapPageState extends State<MapPage> {
                     ),
                   ],
                 ),
-                height: 200,
               ),
             ),
             SizedBox(height: 8),

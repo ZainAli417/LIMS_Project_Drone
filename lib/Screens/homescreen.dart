@@ -51,12 +51,18 @@ class _MyHomePageState extends State<MyHomePage> {
     getPosition();
     _fetchDevices();
     final videoid = YoutubePlayer.convertUrlToId(videourl);
-   /* _controller = YoutubePlayerController(
+    /* _controller = YoutubePlayerController(
       initialVideoId: videoid!,
       flags: const YoutubePlayerFlags(
         autoPlay: false,
       ),
     )..addListener(() {});*/
+  }
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Preload the images before rendering
+   
   }
 
   Map<String, dynamic>? _farmerData;
@@ -234,7 +240,8 @@ class _MyHomePageState extends State<MyHomePage> {
                                   size: 25,
                                 ),
                                 onPressed: () async {
-                                  context.read<ISSAASProvider>().setIsSaas(false); // Set ISSAAS state to true
+                                  context.read<ISSAASProvider>().setIsSaas(
+                                      false); // Set ISSAAS state to true
 
                                   try {
                                     await FirebaseAuth.instance.signOut();
@@ -330,15 +337,51 @@ class _MyHomePageState extends State<MyHomePage> {
                               ),
                             ),
                           )
-                        : const SizedBox(), // Return an empty widget if not purchased
+                        : Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
+                      child: Container(
+                        padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
+                        width: 145,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: Colors.indigo[800],
+                          borderRadius: const BorderRadius.all(Radius.circular(5)),
+                        ),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white, // Set the background color to white
+                            borderRadius: BorderRadius.circular(10), // Rounded corners
+                          ),
+                          child: Row(
+                            children: [
+                              Image.asset(
+                                'images/mobile.png', // Path to your mobile image
+                                height: 30,
+                                width: 30,
+                              ),
+                              const SizedBox(width: 8),
+                              Center(
+                                child: Text(
+                                  "SaaS Version",
+                                  style: TextStyle(
+                                    color: Colors.indigo[800], // Text color set to indigo
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                    fontFamily: GoogleFonts.poppins().fontFamily,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),// Return an empty widget if not purchased
                   ],
                 ),
               ],
             ),
           ),
         ),
-
-
         body: SingleChildScrollView(
           child: Container(
             padding: const EdgeInsets.fromLTRB(3, 10, 1, 0),
@@ -348,7 +391,8 @@ class _MyHomePageState extends State<MyHomePage> {
                 Container(
                   padding: const EdgeInsets.fromLTRB(12, 9, 12, 5),
                   width: 700,
-                  height: 735,
+                 // height : 645,
+          height: isSaas ? 795 : 645,
                   decoration: const BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.all(Radius.circular(15)),
@@ -406,193 +450,254 @@ class _MyHomePageState extends State<MyHomePage> {
                         ],
                       ),
 
-
-
                       const SizedBox(height: 15), // Spacing between rows
-                      Expanded(
-                        child: Column(
+
+                      // First GridView for Weather Cards
+                      SizedBox(
+                        height: 125, // Set the custom height here
+                        child: GridView.count(
+                          shrinkWrap: true, // Add this property
+                          crossAxisCount: 3,
+                          mainAxisSpacing: 10,
+                          crossAxisSpacing: 10,
+                          childAspectRatio: 1,
                           children: [
-                            // First GridView for Weather Cards
-                            Expanded(
-                              flex: 1,
-                              child: GridView.count(
-                                crossAxisCount: 3,
-                                mainAxisSpacing: 10,
-                                crossAxisSpacing: 10,
-                                childAspectRatio:
-                                0.8, // Adjust aspect ratio as needed
-                                children: [
-                                  Obx(() {
-                                    return WeatherCard(
-                                      iconPath: 'images/windspeed.png', // Path to your custom icon
-                                      label: 'Wind Speed',
-                                      value: '${weatherController.weather.value.windspeed.toStringAsFixed(1)} m/s',
-                                      cardColor: Colors.teal,
-                                      textColor: Colors.white,
-                                      iconColor: Colors.white, // Set icon color to white
-                                    );
-                                  }),
-                                  Obx(() {
-                                    return WeatherCard(
-                                      iconPath: 'images/humidity.png', // Path to your custom icon
-                                      label: 'Water Level',
-                                      value: '${weatherController.weather.value.humidity}%',
-                                      cardColor: Colors.blue,
-                                      textColor: Colors.white,
-                                      iconColor: Colors.white, // Set icon color to white
-                                    );
-                                  }),
-                                  Obx(() {
-                                    return WeatherCard(
-                                      iconPath: 'images/temp.png', // Path to your custom icon
-                                      label: 'Temperature',
-                                      value: '${weatherController.weather.value.temp.toStringAsFixed(1)} °C',
-                                      cardColor: Colors.purple,
-                                      textColor: Colors.white,
-                                      iconColor: Colors.white, // Set icon color to white
-                                    );
-                                  }),
-                                ],
-
-
-
+                            Obx(() {
+                              return WeatherCard(
+                                iconPath:
+                                    'images/windspeed.png', // Path to your custom icon
+                                label: 'Wind Speed',
+                                value:
+                                    '${weatherController.weather.value.windspeed.toStringAsFixed(1)} m/s',
+                                cardColor: Colors.teal,
+                                textColor: Colors.white,
+                                iconColor:
+                                    Colors.white, // Set icon color to white
+                              );
+                            }),
+                            Obx(() {
+                              return WeatherCard(
+                                iconPath:
+                                    'images/humidity.png', // Path to your custom icon
+                                label: 'Water Level',
+                                value:
+                                    '${weatherController.weather.value.humidity}%',
+                                cardColor: Colors.blue,
+                                textColor: Colors.white,
+                                iconColor:
+                                    Colors.white, // Set icon color to white
+                              );
+                            }),
+                            Obx(() {
+                              return WeatherCard(
+                                iconPath:
+                                    'images/temp.png', // Path to your custom icon
+                                label: 'Temperature',
+                                value:
+                                    '${weatherController.weather.value.temp.toStringAsFixed(1)} °C',
+                                cardColor: Colors.purple,
+                                textColor: Colors.white,
+                                iconColor:
+                                    Colors.white, // Set icon color to white
+                              );
+                            }),
+                          ],
+                        ),
+                      ),
+                      if (!isSaas)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(5, 10, 5, 5),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.start,
+                            children: [
+                              Image.asset(
+                                'images/mode.jpeg', // Path to your SVG file
+                                height: 25,
+                                width: 25,
                               ),
-                            ),
-                            if (!isSaas)
-                              Padding(
-                              padding: const EdgeInsets.fromLTRB(5, 10, 5, 5),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.start,
-                                children: [
-                                  Image.asset(
-                                    'images/mode.jpeg', // Path to your SVG file
-                                    height: 25,
-                                    width: 25,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    "Control Mode",
-                                    style: TextStyle(
-                                      color: Colors.black,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 17,
-                                      fontFamily:
-                                          GoogleFonts.poppins().fontFamily,
-                                    ),
-                                  ),
-                                ],
+                              const SizedBox(width: 10),
+                              Text(
+                                "Control Mode",
+                                style: TextStyle(
+                                  color: Colors.black,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 17,
+                                  fontFamily: GoogleFonts.poppins().fontFamily,
+                                ),
                               ),
-                            ),
+                            ],
+                          ),
+                        ),
 
 // Second GridView for Control Mode Cards
-                            if (!isSaas)
-                              Expanded(
+                      if (!isSaas)
+                        Row(
+                          children: [
+                            Expanded(
                               flex: 1,
-                              child: GridView.count(
-                                crossAxisCount: 2,
-                                mainAxisSpacing: 20,
-                                crossAxisSpacing: 10,
-                                childAspectRatio:
-                                    1, // Adjust as needed to make cards look balanced
-                                children: [
-                                  GestureDetector(
-                                    onTap: () {
-                                      isManual = false; // Autonomous mode
+                              child: SizedBox(
+                                height: 130, // Set the custom height
+                                width: 140, // Set the custom width
+                                child: GestureDetector(
+                                  onTap: () {
+                                    isManual = false; // Autonomous mode
 
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) => Fetch_Input(
-                                              //controller: _controller,
-                                              isManualControl: isManual),
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => Fetch_Input(
+                                            //controller: _controller,
+                                            isManualControl: isManual),
+                                      ),
+                                    );
+                                  },
+                                  child: Card(
+                                    margin:
+                                        const EdgeInsets.fromLTRB(1, 1, 1, 1),
+                                    elevation: 8,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(15),
+                                    ),
+                                    color: Colors.white,
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Image.asset(
+                                          'images/auto.png', // Replace with your image path
+                                          height: 90,
+                                          width: 140,
                                         ),
-                                      );
-                                    },
-                                    child: Card(
-                                      margin: const EdgeInsets.fromLTRB(1, 1, 1, 1),
-                                      elevation: 8,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(15),
-                                      ),
-                                      color: Colors.white,
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Image.asset(
-                                            'images/auto.jpg', // Replace with your image path
-                                            height: 140,
-                                            width: 150,
+                                        Text(
+                                          'Autonomous',
+                                          style: TextStyle(
+                                            color: Colors.indigo[800],
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w800,
+                                            fontFamily: GoogleFonts.poppins()
+                                                .fontFamily,
                                           ),
-                                          Text(
-                                            'Autonomous',
-                                            style: TextStyle(
-                                              color: Colors.indigo[800],
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w800,
-                                              fontFamily: GoogleFonts.poppins()
-                                                  .fontFamily,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  GestureDetector(
-                                    onTap: () {
-                                      isManual = true; // Manual mode
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) => Fetch_Input(
-                                             // controller: _controller,
-                                              isManualControl: isManual),
-                                        ),
-                                      );
-                                    },
-                                    child: Card(
-                                      elevation: 8,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(15),
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              flex: 1,
+                              child: SizedBox(
+                                height: 140, // Set the custom height
+                                width: 140, // Set the custom width
+                                child: GestureDetector(
+                                  onTap: () {
+                                    isManual = true; // Manual mode
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => Fetch_Input(
+                                            // controller: _controller,
+                                            isManualControl: isManual),
                                       ),
-                                      color: Colors.white,
-                                      child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Image.asset(
-                                            'images/splash4.png', // Replace with your image path
-                                            height: 140,
+                                    );
+                                  },
+                                  child: Card(
+                                    elevation: 8,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(15),
+                                    ),
+                                    color: const Color(0xFFFFFFFF),
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(15),
+                                          child: Image.asset(
+                                            'images/manual.png', // Replace with your image path
+                                            height: 100,
                                             width: 150,
                                           ),
-
-                                          Text(
-                                            'Manual',
-                                            style: TextStyle(
-                                              color: Colors.indigo[800],
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w800,
-                                              fontFamily: GoogleFonts.poppins()
-                                                  .fontFamily,
-                                            ),
+                                        ),
+                                        Text(
+                                          'Manual',
+                                          style: TextStyle(
+                                            color: Colors.indigo[800],
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w800,
+                                            fontFamily: GoogleFonts.poppins()
+                                                .fontFamily,
                                           ),
-
-                                        ],
-                                      ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ],
+                                ),
                               ),
                             ),
                           ],
                         ),
+                      if (isSaas)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(5, 10, 5, 5),
+                          child: Column(
+                            children: [
+                              Image.asset(
+                                'images/saas.png', // Path to your image
+                                height: 250,
+                                width: 450,
+                              ),
+                              const SizedBox(
+                                  height:
+                                      10), // Add some space between the image and the button
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.indigo[800],
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      "Start Spraying",
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                        fontFamily:
+                                            GoogleFonts.poppins().fontFamily,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 5),
+                                    const Icon(
+                                      Icons.arrow_forward_ios,
+                                      color: Colors.white,
+                                    ), // Replace with your desired icon
+                                  ],
+                                ),
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => Fetch_Input(
+                                          // controller: _controller,
+                                          isManualControl: isManual),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(
+                        height: 10,
                       ),
-
                       Row(
                         // First Row
 
                         children: [
-
                           Image.asset(
                             'images/field.png', // Path to your SVG file
                             height: 35, // Optional: Set the height as needed

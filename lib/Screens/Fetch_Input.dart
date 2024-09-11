@@ -1,11 +1,17 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:ui';
+import 'package:image/image.dart' as img;
+import 'dart:typed_data';
+import 'dart:ui' as ui; // Make sure to prefix dart:ui imports with 'ui'
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
 import 'package:get/get_core/src/get_main.dart';
@@ -22,6 +28,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:location/location.dart';
 import 'package:provider/provider.dart';
+import 'package:screenshot/screenshot.dart';
 import '../Constant/ISSAASProvider.dart';
 import '../Constant/controller_weather.dart';
 import '../shared_state.dart';
@@ -45,6 +52,8 @@ class Fetch_Input extends StatefulWidget {
 }
 
 class _Fetch_InputState extends State<Fetch_Input> {
+  final GlobalKey _googleMapKey = GlobalKey(); // Key to capture GoogleMap
+  final ScreenshotController _screenshotController = ScreenshotController();
   Timer? _debounce;
   final FocusNode _focusNode = FocusNode();
   int drone_direct = 0;
@@ -560,13 +569,20 @@ class _Fetch_InputState extends State<Fetch_Input> {
     setState(() {
       _isMoving = false;
       _movementTimer?.cancel();
-      _markers
-          .removeWhere((marker) => marker.markerId == const MarkerId('car'));
+      _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
     });
 
-    // Trigger the success dialog after path completion
-    ShowSuccessDialog();
+    _screenshotController.capture().then((Uint8List? capturedBytes) {
+      if (capturedBytes != null) {
+        // Trigger the success dialog with the screenshot
+        ShowSuccessDialog(capturedBytes);
+      }
+    }).catchError((e) {
+      print('Error capturing screenshot: $e');
+    });
   }
+
+
 
 // Check if the current segment is part of the selected route
   bool _isSegmentSelected(List<LatLng> path, List<List<LatLng>> selectedSegments, int index, PathDirection direction) {
@@ -588,45 +604,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     return false;
   }
-
-// Check if two horizontal segments are equal
-  bool _isHorizontalSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
-    return (segment1[0].latitude == segment2[0].latitude &&
-        segment1[1].latitude == segment2[1].latitude &&
-        (segment1[0].longitude == segment2[0].longitude &&
-            segment1[1].longitude == segment2[1].longitude ||
-            segment1[0].longitude == segment2[1].longitude &&
-                segment1[1].longitude == segment2[0].longitude)) ||
-        (segment1[0].latitude == segment2[1].latitude &&
-            segment1[1].latitude == segment2[0].latitude &&
-            (segment1[0].longitude == segment2[0].longitude &&
-                segment1[1].longitude == segment2[1].longitude ||
-                segment1[0].longitude == segment2[1].longitude &&
-                    segment1[1].longitude == segment2[0].longitude));
-  }
-
-// Check if two vertical segments are equal
-  bool _isVerticalSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
-    return (segment1[0].longitude == segment2[0].longitude &&
-        segment1[1].longitude == segment2[1].longitude &&
-        (segment1[0].latitude == segment2[0].latitude &&
-            segment1[1].latitude == segment2[1].latitude ||
-            segment1[0].latitude == segment2[1].latitude &&
-                segment1[1].latitude == segment2[0].latitude)) ||
-        (segment1[0].longitude == segment2[1].longitude &&
-            segment1[1].longitude == segment2[0].longitude &&
-            (segment1[0].latitude == segment2[0].latitude &&
-                segment1[1].latitude == segment2[1].latitude ||
-                segment1[0].latitude == segment2[1].latitude &&
-                    segment1[1].latitude == segment2[0].latitude));
-  }
-
-// Compare two segments for equality
- /* bool _isSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
-    return (segment1[0] == segment2[0] && segment1[1] == segment2[1]) ||
-        (segment1[0] == segment2[1] && segment1[1] == segment2[0]);
-  }*/
-
   Future<void> _loadCarIcons() async {
     // Load the image from your assets
     const ImageConfiguration imageConfiguration = ImageConfiguration(
@@ -668,7 +645,46 @@ class _Fetch_InputState extends State<Fetch_Input> {
     });
   }
 
-  void ShowSuccessDialog() {
+// Check if two horizontal segments are equal
+  bool _isHorizontalSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
+    return (segment1[0].latitude == segment2[0].latitude &&
+        segment1[1].latitude == segment2[1].latitude &&
+        (segment1[0].longitude == segment2[0].longitude &&
+            segment1[1].longitude == segment2[1].longitude ||
+            segment1[0].longitude == segment2[1].longitude &&
+                segment1[1].longitude == segment2[0].longitude)) ||
+        (segment1[0].latitude == segment2[1].latitude &&
+            segment1[1].latitude == segment2[0].latitude &&
+            (segment1[0].longitude == segment2[0].longitude &&
+                segment1[1].longitude == segment2[1].longitude ||
+                segment1[0].longitude == segment2[1].longitude &&
+                    segment1[1].longitude == segment2[0].longitude));
+  }
+
+// Check if two vertical segments are equal
+  bool _isVerticalSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
+    return (segment1[0].longitude == segment2[0].longitude &&
+        segment1[1].longitude == segment2[1].longitude &&
+        (segment1[0].latitude == segment2[0].latitude &&
+            segment1[1].latitude == segment2[1].latitude ||
+            segment1[0].latitude == segment2[1].latitude &&
+                segment1[1].latitude == segment2[0].latitude)) ||
+        (segment1[0].longitude == segment2[1].longitude &&
+            segment1[1].longitude == segment2[0].longitude &&
+            (segment1[0].latitude == segment2[0].latitude &&
+                segment1[1].latitude == segment2[1].latitude ||
+                segment1[0].latitude == segment2[1].latitude &&
+                    segment1[1].latitude == segment2[0].latitude));
+  }
+
+// Compare two segments for equality
+ /* bool _isSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
+    return (segment1[0] == segment2[0] && segment1[1] == segment2[1]) ||
+        (segment1[0] == segment2[1] && segment1[1] == segment2[0]);
+  }*/
+
+
+  void ShowSuccessDialog(Uint8List screenshotBytes) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -703,13 +719,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              SvgPicture.asset(
-                'images/success.svg', // Replace with your SVG image asset path
-                width: 300,
-                height: 300,
-              ),
-              const SizedBox(
-                  height: 5), // Add some space between the image and the button
+              Image.memory(screenshotBytes), // Display the screenshot
+              const SizedBox(height: 5), // Space between image and button
             ],
           ),
           actions: <Widget>[
@@ -721,9 +732,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
                 ),
               ),
               onPressed: () {
-                context
-                    .read<ISSAASProvider>()
-                    .setIsSaas(false); // Set ISSAAS state to true
                 Navigator.of(context).pop(); // Close the dialog
                 Navigator.pushReplacement(
                   context,
@@ -735,9 +743,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                 children: [
                   const Icon(Icons.add_to_home_screen_outlined,
                       color: Colors.white), // Add the home icon
-                  const SizedBox(
-                      width:
-                          10), // Add some space between the icon and the text
+                  const SizedBox(width: 10), // Space between icon and text
                   Text(
                     'Go Back to Home',
                     style: GoogleFonts.poppins(
@@ -754,7 +760,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
-
   void setup_hardware() {
     showDialog(
       context: context,
@@ -1171,7 +1176,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'Select One or More Vertical Routes to Spray',
+                        'Select One or More Routes to Spray',
                         style: GoogleFonts.poppins(
                           fontSize: 16,
                           fontWeight: FontWeight.w500,
@@ -1271,8 +1276,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
-
-
   void _handleSelectedVerticalSegments(List<int> selectedSegments) {
     _ismanual = false;
 
@@ -1307,9 +1310,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       _startMovement(_dronepath, _selectedPathsQueue);
     }
   }
-
-
-// Warning dialog when no routes are selected
+  // Warning dialog when no routes are selected
   void _showWarningDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -1350,7 +1351,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
-
   void dronepath_Horizontal(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
 
@@ -1432,7 +1432,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       totalZigzagPathKm = totalDistancezigzagKm;
     });
   }
-
   void dronepath_Vertical(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
 
@@ -1509,14 +1508,12 @@ class _Fetch_InputState extends State<Fetch_Input> {
       totalZigzagPathKm = totalDistancezigzagKm;
     });
   }
-
 // Extracting LatLng points from markers
   void extractLatLngPoints() {
     if (polygons.isNotEmpty) {
       polygonPoints = polygons.first.points.toList();
     }
   }
-
   Future<void> _closePolygon(double turnLength) async {
     setState(() {
       _ismanual = true;
@@ -1546,7 +1543,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     }
   }
-
   Future<void> _requestLocationPermission() async {
     bool _serviceEnabled;
     PermissionStatus _permissionGranted;
@@ -1567,7 +1563,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     _currentLocation = await _location.getLocation();
     setState(() {});
   }
-
   void _initializeFirebaseListener() {
     _latRef = FirebaseDatabase.instance.ref().child('Current_Lat');
     _longRef = FirebaseDatabase.instance.ref().child('Current_Long');
@@ -1585,17 +1580,14 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     });
   }
-
   void _updateMarkerPosition(double lat, double long) {
     setState(() {
       _currentPosition = LatLng(lat, long);
     });
   }
-
   void _hideKeyboard() {
     FocusScope.of(context).previousFocus();
   }
-
   void _showInputSelectionPopup() {
     showModalBottomSheet(
       context: context,
@@ -1716,7 +1708,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
-
   Future<void> _showFileSelectionPopup() async {
     List<String> localFiles = await _getAssetFiles(); // Get list of local files
     List<String> cloudFiles =
@@ -1946,7 +1937,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
-
   Future<void> _loadMarkersFromCloudFile(String fileName) async {
     try {
       final Reference fileRef = FirebaseStorage.instance.ref().child(fileName);
@@ -1997,7 +1987,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error loading markers from cloud file: $e');
     }
   }
-
 //Widget to make a button which will trigger the functions SELECTING_PATH_AND_DIRECTION()
   Future<void> _loadMarkersFromFile(String fileName) async {
     final contents = await rootBundle.loadString(fileName);
@@ -2035,7 +2024,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     // Animate the camera to the first marker after loading markers
     animateToFirstMarker();
   }
-
 // Function to fetch files from Firebase Storag
   Future<List<String>> _fetchCloudFiles() async {
     List<String> fileNames = [];
@@ -2049,7 +2037,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     return fileNames;
   }
-
   Future<List<String>> _getAssetFiles() async {
     // Load the AssetManifest file
     final manifestContent = await rootBundle.loadString('AssetManifest.json');
@@ -2195,7 +2182,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 fontFamily: GoogleFonts.poppins().fontFamily,
                               ),
                             ),
-                            SizedBox(
+                            const SizedBox(
                                 width:
                                     2), // Reduced spacing between icon and text
 
@@ -2307,7 +2294,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
                       child: Container(
                         padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
-                        width: 170,
+                        width: 140,
                         height: 40,
                         decoration: BoxDecoration(
                           color: Colors.indigo[800],
@@ -2636,6 +2623,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
                     ),
                   ),
                 ),
+
+
+
               widget.isManualControl
                   ? Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -2648,17 +2638,13 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 GestureDetector(
                                   onTapDown: (TapDownDetails details) {
                                     setState(() {
-                                      _isUpPressed = true;
-                                      _isLeftPressed = false;
-                                      _isRightPressed = false;
-                                      _isDownPressed = false;
+                                     //start moving
                                     });
-                                    //_manualMovement(3); // Move up
                                   },
                                   onTapUp: (TapUpDetails details) {
                                     setState(() {
-                                      _isUpPressed = false;
-                                    });
+//stop moving
+});
                                     //_manualMovement(0); // Stop drone when button is released
                                   },
                                   child: Image.asset(
@@ -2678,13 +2664,12 @@ class _Fetch_InputState extends State<Fetch_Input> {
                             GestureDetector(
                               onTapDown: (TapDownDetails details) {
                                 setState(() {
-                                  _isLeftPressed = true;
+                                  //start moving
                                 });
-                                // _manualMovement(1); // Move left
                               },
                               onTapUp: (TapUpDetails details) {
                                 setState(() {
-                                  _isLeftPressed = false;
+//stop moving
                                 });
                                 //_manualMovement(0); // Stop drone when button is released
                               },
@@ -2698,14 +2683,14 @@ class _Fetch_InputState extends State<Fetch_Input> {
                             GestureDetector(
                               onTapDown: (TapDownDetails details) {
                                 setState(() {
-                                  _isStop = true;
+                                  //start moving
                                 });
-                                // _manualMovement(0); // Stop drone immediately
                               },
                               onTapUp: (TapUpDetails details) {
                                 setState(() {
-                                  _isStop = false;
+//stop moving
                                 });
+                                //_manualMovement(0); // Stop drone when button is released
                               },
                               child: Image.asset(
                                 'images/stop.png',
@@ -2717,13 +2702,12 @@ class _Fetch_InputState extends State<Fetch_Input> {
                             GestureDetector(
                               onTapDown: (TapDownDetails details) {
                                 setState(() {
-                                  _isRightPressed = true;
+                                  //start moving
                                 });
-                                // _manualMovement(2); // Move right
                               },
                               onTapUp: (TapUpDetails details) {
                                 setState(() {
-                                  _isRightPressed = false;
+//stop moving
                                 });
                                 //_manualMovement(0); // Stop drone when button is released
                               },
@@ -2744,13 +2728,12 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 GestureDetector(
                                   onTapDown: (TapDownDetails details) {
                                     setState(() {
-                                      _isDownPressed = true;
+                                      //start moving
                                     });
-                                    // _manualMovement(4); // Move down
                                   },
                                   onTapUp: (TapUpDetails details) {
                                     setState(() {
-                                      _isDownPressed = false;
+//stop moving
                                     });
                                     //_manualMovement(0); // Stop drone when button is released
                                   },
@@ -2899,9 +2882,13 @@ class _Fetch_InputState extends State<Fetch_Input> {
                 borderRadius: BorderRadius.circular(20),
                 child: Stack(
                   children: [
-                    _currentLocation == null
-                        ? const Center(child: CircularProgressIndicator())
-                        : GoogleMap(
+                  Screenshot(
+                  controller: _screenshotController,
+                  child: _currentLocation == null
+                      ? const Center(child: CircularProgressIndicator())
+                      : RepaintBoundary(
+                    key: _googleMapKey, // Attach the key to GoogleMap
+                    child: GoogleMap(
                             initialCameraPosition: _currentLocation != null
                                 ? CameraPosition(
                                     target: LatLng(
@@ -2944,6 +2931,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                             myLocationEnabled: true,
                             myLocationButtonEnabled: true,
                           ),
+                  ),
+    ),
                     Padding(
                       padding: const EdgeInsets.all(8.0),
                       child: ClipRRect(
@@ -3085,6 +3074,53 @@ class _Fetch_InputState extends State<Fetch_Input> {
         ),
       ),
     );
+  }
+  Future<void> captureBottomHalfGoogleMap() async {
+    try {
+      // Capture the widget as an image
+      RenderRepaintBoundary boundary = _googleMapKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      ui.Image capturedImage = await boundary.toImage();
+
+      // Get image dimensions
+      final int imageWidth = capturedImage.width;
+      final int imageHeight = capturedImage.height;
+
+      // Convert the image to byte data and extract only the bottom half
+      final ByteData? byteData = await capturedImage.toByteData(format: ui.ImageByteFormat.png);
+
+      if (byteData != null) {
+        final Uint8List pngBytes = byteData.buffer.asUint8List();
+
+        // You can crop the image now to get the bottom half
+        final croppedBytes = cropBottomHalf(pngBytes, imageWidth, imageHeight);
+
+        // Trigger the success dialog with the cropped screenshot
+        ShowSuccessDialog(croppedBytes);
+      }
+    } catch (e) {
+      print('Error capturing GoogleMap screenshot: $e');
+    }
+  }
+
+  Uint8List cropBottomHalf(Uint8List originalBytes, int width, int height) {
+    // Decode the original image from the Uint8List
+    final img.Image? originalImage = img.decodeImage(originalBytes);
+
+    if (originalImage != null) {
+      // Crop the bottom half of the image
+      final img.Image croppedImage = img.copyCrop(
+        originalImage,
+        x: 0,             // x-coordinate (left)
+        y: height ~/ 2,   // y-coordinate (start from the middle)
+        width: width,     // width of the cropped image (same as original)
+        height: height ~/ 2, // height of the cropped image (bottom half)
+      );
+
+      // Encode the cropped image back to Uint8List
+      return Uint8List.fromList(img.encodePng(croppedImage));
+    }
+
+    return originalBytes; // Return original bytes if decoding fails
   }
 
   void animateToFirstMarker() {

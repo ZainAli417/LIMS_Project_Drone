@@ -27,6 +27,9 @@ class _SplashScreenState extends State<SplashScreen>
     // Preload the images before rendering
     precacheImage(const AssetImage('images/bg.jpeg'), context);
     precacheImage(const AssetImage('images/logo.png'), context);
+    precacheImage(const AssetImage('images/auto.png'), context);
+    precacheImage(const AssetImage('images/manual.png'), context);
+    precacheImage(const AssetImage('images/saas.png'), context);
     splashProvider.startAnimations();
   }
 

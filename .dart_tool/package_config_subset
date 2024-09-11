@@ -26,6 +26,10 @@ animated_widgets
 2.12
 file:///root/.pub-cache/hosted/pub.dev/animated_widgets-1.1.0/
 file:///root/.pub-cache/hosted/pub.dev/animated_widgets-1.1.0/lib/
+archive
+3.0
+file:///root/.pub-cache/hosted/pub.dev/archive-3.6.1/
+file:///root/.pub-cache/hosted/pub.dev/archive-3.6.1/lib/
 args
 3.0
 file:///root/.pub-cache/hosted/pub.dev/args-2.5.0/
@@ -278,6 +282,10 @@ http_parser
 2.12
 file:///root/.pub-cache/hosted/pub.dev/http_parser-4.0.2/
 file:///root/.pub-cache/hosted/pub.dev/http_parser-4.0.2/lib/
+image
+2.15
+file:///root/.pub-cache/hosted/pub.dev/image-4.2.0/
+file:///root/.pub-cache/hosted/pub.dev/image-4.2.0/lib/
 intl
 2.12
 file:///root/.pub-cache/hosted/pub.dev/intl-0.18.1/
@@ -422,6 +430,10 @@ sanitize_html
 2.12
 file:///root/.pub-cache/hosted/pub.dev/sanitize_html-2.1.0/
 file:///root/.pub-cache/hosted/pub.dev/sanitize_html-2.1.0/lib/
+screenshot
+2.12
+file:///root/.pub-cache/hosted/pub.dev/screenshot-3.0.0/
+file:///root/.pub-cache/hosted/pub.dev/screenshot-3.0.0/lib/
 sleek_circular_slider
 2.12
 file:///root/.pub-cache/hosted/pub.dev/sleek_circular_slider-2.0.1/

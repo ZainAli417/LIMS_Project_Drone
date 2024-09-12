@@ -253,23 +253,22 @@ class _Fetch_InputState extends State<Fetch_Input> {
   } // Return distance in kilometers
 
   void _startMovement(List<LatLng> path, List<List<LatLng>> selectedSegments) {
-    if (path.isEmpty) {
-      print("Path is empty, cannot start movement");
+    if (path.isEmpty || _selectedStartingPoint == null) {
+      print("Path is empty or starting point not selected, cannot start movement");
       return;
     }
 
-    // Reset car position and index
+    // Find the nearest point on the path to the selected starting point
+    int startingPointIndex = _findClosestPointIndex(path, _selectedStartingPoint!);
+
+    // Set the car's initial position to the selected starting point
     setState(() {
-      _carPosition = path[0];
-      _currentPointIndex = 0;
+      _carPosition = path[startingPointIndex]; // Start from the closest point
+      _currentPointIndex = startingPointIndex;
     });
 
     // Decide the direction-specific marker function
-    if (_isHorizontalDirection) {
-      Add_Car_Marker_Horizantal(_isSegmentSelected(path, selectedSegments, 0, PathDirection.horizontal));
-    } else {
-      Add_Car_Marker_Vertical(_isSegmentSelected(path, selectedSegments, 0, PathDirection.vertical));
-    }
+      Add_Car_Marker(_isSegmentSelected(path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
 
     double updateInterval = 0.1; // seconds
     _isMoving = true;
@@ -278,69 +277,155 @@ class _Fetch_InputState extends State<Fetch_Input> {
     double distanceCoveredInWholeJourney = 0.0;
     double segmentDistanceCoveredKM = 0.0;
 
+    // Determine movement direction based on starting point
+    bool movingForward = startingPointIndex < path.length / 2;
+
+    // Start movement with timer
     _movementTimer = Timer.periodic(
-      Duration(milliseconds: (updateInterval * 1000).toInt()),
-          (timer) async {
-        if (_currentPointIndex < path.length - 1) {
-          LatLng start = path[_currentPointIndex];
-          LatLng end = path[_currentPointIndex + 1];
-          double segmentDistanceKM = calculateonelinedistance(start, end);
-          double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
-          segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-          double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
-          _carPosition = _lerpLatLng(start, end, segmentProgress);
+        Duration(milliseconds: (updateInterval * 1000).toInt()),
+            (timer) async {
+          if (_isMoving) {
+            if (movingForward) {
+              if (_currentPointIndex < path.length - 1) {
+                LatLng start = path[_currentPointIndex];
+                LatLng end = path[_currentPointIndex + 1];
+                double segmentDistanceKM = calculateonelinedistance(start, end);
+                double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
+                segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+                double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+                _carPosition = _lerpLatLng(start, end, segmentProgress);
 
-          bool isSelectedSegment = _isSegmentSelected(path, selectedSegments, _currentPointIndex, _isHorizontalDirection ? PathDirection.horizontal : PathDirection.vertical);
-          distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+                bool isSelectedSegment = _isSegmentSelected(
+                  path,
+                  selectedSegments,
+                  _currentPointIndex,
+                  _isHorizontalDirection ? PathDirection.horizontal : PathDirection.vertical,
+                );
 
-          if (isSelectedSegment) {
-            totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
-            double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
-            setState(() {
-              _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
-              _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
-            });
-            if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
-              FirebaseDatabase.instance
-                  .ref()
-                  .child('remainingDistance')
-                  .set(_remainingDistanceKM_SelectedPath);
-            }
-          }
+                distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
 
-          setState(() {
-            _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
-          });
+                if (isSelectedSegment) {
+                  totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
+                  double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+                  setState(() {
+                    _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
+                    _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+                  });
 
-          setState(() {
-            _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
+                  if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
+                    FirebaseDatabase.instance.ref().child('remainingDistance').set(_remainingDistanceKM_SelectedPath);
+                  }
+                }
 
-            // Update marker based on direction
-            if (_isHorizontalDirection) {
-              Add_Car_Marker_Horizantal(isSelectedSegment);
+                setState(() {
+                  _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
+                });
+
+                // Update car marker position
+                setState(() {
+                  _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
+                  Add_Car_Marker(isSelectedSegment);
+
+                  if (segmentProgress >= 1.0) {
+                    _currentPointIndex++;
+                    segmentDistanceCoveredKM = 0.0;
+                  }
+                });
+
+                if (_currentPointIndex >= path.length - 1) {
+                  _isMoving = false;
+                  timer.cancel();
+                  _onPathComplete();
+                }
+              } else {
+                _movementTimer?.cancel();
+                _isMoving = false;
+                timer.cancel();
+                _onPathComplete();
+              }
             } else {
-              Add_Car_Marker_Vertical(isSelectedSegment);
-            }
+              if (_currentPointIndex > 0) {
+                LatLng start = path[_currentPointIndex];
+                LatLng end = path[_currentPointIndex - 1];
+                double segmentDistanceKM = calculateonelinedistance(start, end);
+                double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
+                segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+                double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+                _carPosition = _lerpLatLng(start, end, segmentProgress);
 
-            if (segmentProgress >= 1.0) {
-              _currentPointIndex++;
-              segmentDistanceCoveredKM = 0.0;
-            }
-          });
+                bool isSelectedSegment = _isSegmentSelected(
+                  path,
+                  selectedSegments,
+                  _currentPointIndex - 1,
+                  _isHorizontalDirection ? PathDirection.horizontal : PathDirection.vertical,
+                );
 
-          if (_currentPointIndex >= path.length - 1) {
-            _isMoving = false;
-            timer.cancel();
-            _onPathComplete();
+                distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+
+                if (isSelectedSegment) {
+                  totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
+                  double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+                  setState(() {
+                    _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
+                    _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+                  });
+
+                  if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
+                    FirebaseDatabase.instance.ref().child('remainingDistance').set(_remainingDistanceKM_SelectedPath);
+                  }
+                }
+
+                setState(() {
+                  _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
+                });
+
+                // Update car marker position
+                setState(() {
+                  _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
+
+                    Add_Car_Marker(isSelectedSegment);
+
+
+                  if (segmentProgress >= 1.0) {
+                    _currentPointIndex--;
+                    segmentDistanceCoveredKM = 0.0;
+                  }
+                });
+
+                if (_currentPointIndex <= 0) {
+                  _isMoving = false;
+                  timer.cancel();
+                  _onPathComplete();
+                }
+              } else {
+                _movementTimer?.cancel();
+                _isMoving = false;
+                timer.cancel();
+                _onPathComplete();
+              }
+            }
           }
-        } else {
-          _movementTimer?.cancel();
-          _isMoving = false;
-          timer.cancel();
-          _onPathComplete();
-        }
-      },
-    );
+        });
+  }
+
+// Helper function to find the closest point in the path to the selected starting point
+  int _findClosestPointIndex(List<LatLng> path, LatLng startingPoint) {
+    if (path.isEmpty) return -1; // No path, return invalid index
+
+    int closestIndex = 0;
+    double closestDistance = calculateonelinedistance(path[0], startingPoint);
+
+    for (int i = 1; i < path.length; i++) {
+      double distance = calculateonelinedistance(path[i], startingPoint);
+
+      // Compare and find the smallest distance
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestIndex = i;
+      }
+    }
+
+    return closestIndex; // Return the index of the closest point
   }
 
   void Selecting_Path_Direction_and_Turn() {
@@ -529,6 +614,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       });
                     } else {
                       Navigator.of(context).pop();
+                      LatLng initialPosition = _selectedStartingPoint!;
                       extractLatLngPoints();
                       if (_selectedDirection == PathDirection.vertical) {
                         _isHorizontalDirection = false; // Set direction flag
@@ -621,7 +707,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     );
   }
 
-  Future<void> Add_Car_Marker_Horizantal(bool isSelectedSegment) async {
+  Future<void> Add_Car_Marker(bool isSelectedSegment) async {
     setState(() {
       _markers.add(Marker(
         markerId: const MarkerId('car'),
@@ -633,17 +719,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     });
   }
 
-  Future<void> Add_Car_Marker_Vertical(bool isSelectedSegment) async {
-    setState(() {
-      _markers.add(Marker(
-        markerId: const MarkerId('car'),
-        position: LatLng(_carPosition.latitude, _carPosition.longitude),
-        icon: isSelectedSegment
-            ? ugv_active
-            : ugv_dead, // Set the car marker based on the segment selection
-      ));
-    });
-  }
 
 // Check if two horizontal segments are equal
   bool _isHorizontalSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
@@ -1364,12 +1439,15 @@ class _Fetch_InputState extends State<Fetch_Input> {
     double minLng = sortedByLng.first.longitude;
     double maxLng = sortedByLng.last.longitude;
 
+    // Ensure the starting latitude is within the boundaries
     double startLat = startPoint.latitude.clamp(minLat, maxLat);
 
     List<List<LatLng>> straightPaths = [];
     bool leftToRight = true;
 
     double latIncrement = pathWidth / 111111; // 1 degree latitude ~= 111.1 km
+
+    // Ensure that the starting point is factored in, by finding the closest path to the start point
 
     // Generate horizontal paths downwards from the starting point (towards maxLat)
     for (double lat = startLat; lat <= maxLat; lat += latIncrement) {
@@ -1380,8 +1458,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
         if ((p1.latitude <= lat && p2.latitude >= lat) ||
             (p1.latitude >= lat && p2.latitude <= lat)) {
           double lng = p1.longitude +
-              (lat - p1.latitude) *
-                  (p2.longitude - p1.longitude) /
+              (lat - p1.latitude) * (p2.longitude - p1.longitude) /
                   (p2.latitude - p1.latitude);
           intersections.add(LatLng(lat, lng.clamp(minLng, maxLng)));
         }
@@ -1402,8 +1479,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
         if ((p1.latitude <= lat && p2.latitude >= lat) ||
             (p1.latitude >= lat && p2.latitude <= lat)) {
           double lng = p1.longitude +
-              (lat - p1.latitude) *
-                  (p2.longitude - p1.longitude) /
+              (lat - p1.latitude) * (p2.longitude - p1.longitude) /
                   (p2.latitude - p1.latitude);
           intersections.add(LatLng(lat, lng.clamp(minLng, maxLng)));
         }
@@ -1416,7 +1492,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
 
     List<LatLng> dronePath = straightPaths.expand((segment) => segment).toList();
-    dronePath.insert(0, startPoint);
+    dronePath.insert(0, startPoint); // Ensure start from user-selected point
 
     double totalDistancezigzagKm = _calculateTotalDistanceZIGAG(dronePath);
 
@@ -1440,12 +1516,16 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     double minLng = sortedByLng.first.longitude;
     double maxLng = sortedByLng.last.longitude;
+
+    // Ensure the starting longitude is within the boundaries
     double startLng = startPoint.longitude.clamp(minLng, maxLng);
 
     List<List<LatLng>> straightPaths = [];
     bool bottomToTop = true;
 
     double lngIncrement = pathWidth / 111111; // 1 degree longitude ~= 111.1 km
+
+    // Ensure that the starting point is factored in, by finding the closest path to the start point
 
     // Generate vertical paths to the right (towards maxLng)
     for (double lng = startLng; lng <= maxLng; lng += lngIncrement) {
@@ -1456,8 +1536,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
         if ((p1.longitude <= lng && p2.longitude >= lng) ||
             (p1.longitude >= lng && p2.longitude <= lng)) {
           double lat = p1.latitude +
-              (lng - p1.longitude) *
-                  (p2.latitude - p1.latitude) /
+              (lng - p1.longitude) * (p2.latitude - p1.latitude) /
                   (p2.longitude - p1.longitude);
           intersections.add(LatLng(lat, lng));
         }
@@ -1478,8 +1557,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
         if ((p1.longitude <= lng && p2.longitude >= lng) ||
             (p1.longitude >= lng && p2.longitude <= lng)) {
           double lat = p1.latitude +
-              (lng - p1.longitude) *
-                  (p2.latitude - p1.latitude) /
+              (lng - p1.longitude) * (p2.latitude - p1.latitude) /
                   (p2.longitude - p1.longitude);
           intersections.add(LatLng(lat, lng));
         }
@@ -1492,7 +1570,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
 
     List<LatLng> dronePath = straightPaths.expand((segment) => segment).toList();
-    dronePath.insert(0, startPoint);
+    dronePath.insert(0, startPoint); // Ensure start from user-selected point
 
     double totalDistancezigzagKm = _calculateTotalDistanceZIGAG(dronePath);
 

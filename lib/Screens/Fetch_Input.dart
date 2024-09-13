@@ -190,7 +190,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       MaterialPageRoute(builder: (BuildContext context) => widget),
     );
   }
-
   double calculate_selcted_segemnt_distance(List<LatLng> path) {
     double totalDistance = 0.0;
     for (int i = 0; i < path.length - 1; i++) {
@@ -200,13 +199,11 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     return totalDistance;
   } // Return distance in kilometers
-
   LatLng _lerpLatLng(LatLng a, LatLng b, double t) {
     double lat = a.latitude + (b.latitude - a.latitude) * t;
     double lng = a.longitude + (b.longitude - a.longitude) * t;
     return LatLng(lat, lng);
   }
-
   void _storeTimeDurationInDatabase(double totalDistanceInKM) {
     try {
       const double speed = 10; // Speed in meters per second
@@ -220,7 +217,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error storing time duration in database: $e');
     }
   }
-
   void _storeTimeLeftInDatabase(double remainingDistanceKM_SelectedPath) async {
     try {
       const double speed = 10; // Speed in meters per second
@@ -234,7 +230,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error storing time duration in database: $e');
     }
   }
-
   double calculateonelinedistance(LatLng start, LatLng end) {
     const R = 6371; // Radius of the Earth in kilometers
     double lat1 = start.latitude * pi / 180;
@@ -248,7 +243,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     double c = 2 * atan2(sqrt(a), sqrt(1 - a));
     return R * c; // Distance in kilometers
   }
-
   double _calculateTotalDistanceZIGAG(List<LatLng> path) {
     double totalzigzagdis = 0.0;
     for (int i = 0; i < path.length - 1; i++) {
@@ -256,7 +250,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     return totalzigzagdis;
   } // Return distance in kilometers
-
   void _startMovement(List<LatLng> path, List<List<LatLng>> selectedSegments) {
     if (path.isEmpty || _selectedStartingPoint == null) {
       print(
@@ -441,7 +434,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     });
   }
-
 // Helper function to find the closest point in the path to the selected starting point
   int _findClosestPointIndex(List<LatLng> path, LatLng startingPoint) {
     if (path.isEmpty) return -1; // No path, return invalid index
@@ -461,7 +453,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     return closestIndex; // Return the index of the closest point
   }
-
   void Selecting_Path_Direction_and_Turn() {
     bool isStartingPointEmpty = false; // Validation flag for the dropdown
 
@@ -702,7 +693,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
-
   void _onPathComplete() {
     // Clear all paths and stop movement
     setState(() {
@@ -721,7 +711,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error capturing screenshot: $e');
     });
   }
-
 // Check if the current segment is part of the selected route
   bool _isSegmentSelected(List<LatLng> path,List<List<LatLng>> selectedSegments, int index, PathDirection direction) {
     if (index < path.length - 1) {
@@ -742,7 +731,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     return false;
   }
-
   Future<void> _loadCarIcons() async {
     // Load the image from your assets
     const ImageConfiguration imageConfiguration = ImageConfiguration(
@@ -759,7 +747,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       //'images/ugv_active.png', // Replace with your actual asset path
     );
   }
-
   Future<void> Add_Car_Marker(bool isSelectedSegment) async {
     setState(() {
       _markers.add(Marker(
@@ -771,7 +758,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       ));
     });
   }
-
 // Check if two horizontal segments are equal
   bool _isHorizontalSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
     return (segment1[0].latitude == segment2[0].latitude &&
@@ -787,7 +773,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
                 segment1[0].longitude == segment2[1].longitude &&
                     segment1[1].longitude == segment2[0].longitude));
   }
-
 // Check if two vertical segments are equal
   bool _isVerticalSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
     return (segment1[0].longitude == segment2[0].longitude &&
@@ -803,7 +788,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
                 segment1[0].latitude == segment2[1].latitude &&
                     segment1[1].latitude == segment2[0].latitude));
   }
-
   void ShowSuccessDialog(Uint8List screenshotBytes) {
     showDialog(
       context: context,
@@ -880,7 +864,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
-
   void setup_hardware() {
     showDialog(
       context: context,
@@ -1169,7 +1152,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
-
   void _showHorizontalRoutesDialog() {
     List<int> selectedSegments = [];
 
@@ -1340,7 +1322,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
-
   void _showVerticalRoutesDialog() {
     List<int> selectedSegments = [];
     List<List<LatLng>> verticalPaths = _allPaths;
@@ -1506,7 +1487,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
-
   void _updatePolylineColors(List<int> selectedSegments, {bool isVertical = false}) {
     setState(() {
       // Update horizontal paths
@@ -1543,7 +1523,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     });
   }
-
   // Warning dialog when no routes are selected
   void _showWarningDialog(BuildContext context) {
     showDialog(
@@ -1585,7 +1564,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
-
   void dronepath_Horizontal(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
 
@@ -1677,7 +1655,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       totalZigzagPathKm = totalDistancezigzagKm;
     });
   }
-
   void dronepath_Vertical(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
 
@@ -1763,14 +1740,12 @@ class _Fetch_InputState extends State<Fetch_Input> {
       totalZigzagPathKm = totalDistancezigzagKm;
     });
   }
-
 // Extracting LatLng points from markers
   void extractLatLngPoints() {
     if (polygons.isNotEmpty) {
       polygonPoints = polygons.first.points.toList();
     }
   }
-
   Future<void> _closePolygon(double turnLength) async {
     setState(() {
       _ismanual = true;
@@ -1800,7 +1775,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     }
   }
-
   Future<void> _requestLocationPermission() async {
     bool _serviceEnabled;
     PermissionStatus _permissionGranted;
@@ -1821,7 +1795,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     _currentLocation = await _location.getLocation();
     setState(() {});
   }
-
   void _initializeFirebaseListener() {
     _latRef = FirebaseDatabase.instance.ref().child('Current_Lat');
     _longRef = FirebaseDatabase.instance.ref().child('Current_Long');
@@ -1839,17 +1812,14 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     });
   }
-
   void _updateMarkerPosition(double lat, double long) {
     setState(() {
       _currentPosition = LatLng(lat, long);
     });
   }
-
   void _hideKeyboard() {
     FocusScope.of(context).previousFocus();
   }
-
   void _showInputSelectionPopup() {
     showModalBottomSheet(
       context: context,
@@ -1970,8 +1940,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
-
-
   Future<void> _showFileSelectionPopup() async {
     List<String> cloudFiles = await _fetchCloudFiles(); // Get list of cloud files
 
@@ -2203,12 +2171,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
-
-
-
-
-
-
   Future<void> _loadMarkersFromCloudFile(String fileName) async {
     try {
       final Reference fileRef = FirebaseStorage.instance.ref().child(fileName);
@@ -2269,9 +2231,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error loading markers from cloud file: $e');
     }
   }
-
 //Widget to make a button which will trigger the functions SELECTING_PATH_AND_DIRECTION()
-
   Future<void> _loadMarkersFromFile(String filePath) async {
     try {
       // Read the file content from the selected file path
@@ -2327,19 +2287,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print("Error reading file: $e");
     }
   }
-
-
-
-
-
-
-
-
-
-
-
-
-// Function to fetch files from Firebase Storag
+// Function to fetch files from Firebase Storage
   Future<List<String>> _fetchCloudFiles() async {
     List<String> fileNames = [];
     try {
@@ -2352,8 +2300,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     return fileNames;
   }
-
-
   void _updatePolylines() {
     _polylines.clear();
 
@@ -2386,7 +2332,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       });
     }
   }
-
 //UI BUILD
   @override
   Widget build(BuildContext context) {
@@ -2680,107 +2625,65 @@ class _Fetch_InputState extends State<Fetch_Input> {
             Column(children: [
               // Conditional widget loading with `Visibility`
               if (polygons.isNotEmpty)
+
                 Card(
                   color: Colors.white,
-                  elevation: 4,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    side: const BorderSide(color: Colors.indigo, width: 2),
-                  ),
+                  elevation: 8,
+
                   child: Padding(
-                    padding: const EdgeInsets.all(10.0),
+                    padding: const EdgeInsets.all(8.0),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         // Row 1: Totality fields in containers
-                        Wrap(
-                          spacing: 8, // Horizontal space between items
-                          runSpacing: 8, // Vertical space between rows
-                          children: [
-                            Container(
-                              padding: EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.cyan,
-                                borderRadius: BorderRadius.circular(5),
-                              ),
-                              child: Text(
-                                "Area: ${_calculateSphericalPolygonArea(_markerPositions).toStringAsFixed(2)} acres",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
-                                  fontFamily: GoogleFonts.poppins().fontFamily,
-                                ),
-                              ),
+                        Card(
+                          color: Colors.white,
+                          shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.only(
+                              topLeft: Radius.circular(5),
+                              topRight: Radius.circular(5),
+                              bottomLeft: Radius.circular(5),
+                              bottomRight: Radius.circular(5),
                             ),
-                            Container(
-                              padding: EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.indigo[800],
-                                borderRadius: BorderRadius.circular(5),
+                          ),
+                          elevation: 0,
+                          child: Row(
+                            children: [
+                              _CardItem(
+                                title: 'Area',
+                                value: '${_calculateSphericalPolygonArea(_markerPositions).toStringAsFixed(2)} ac',
+                                color: Colors.indigo[800]!,
+                                icon: Icons.location_on,
                               ),
-                              child: Text(
-                                "Total Dis.: ${totalZigzagPathKm.toStringAsFixed(2)} Km",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
-                                  fontFamily: GoogleFonts.poppins().fontFamily,
-                                ),
+                              _CardItem(
+                                title: 'Total',
+                                value: '${totalZigzagPathKm.toStringAsFixed(2)} Km',
+                                color: Colors.deepPurple[800]!,
+                                icon: Icons.directions,
                               ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.amber[900],
-                                borderRadius: BorderRadius.circular(5),
+                              _CardItem(
+                                title: 'Spray',
+                                value: '${_totalDistanceKM.toStringAsFixed(2)} Km',
+                                color: Colors.amber[900]!,
+                                icon: Icons.shower_outlined,
                               ),
-                              child: Text(
-                                "Spray Dis.: ${_totalDistanceKM.toStringAsFixed(2)} Km",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
-                                  fontFamily: GoogleFonts.poppins().fontFamily,
-                                ),
+                              _CardItem(
+                                title: 'Spray',
+                                value: '${timeduration.toStringAsFixed(2)} min',
+                                color: Colors.red[800]!,
+                                icon: Icons.route_outlined,
                               ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.red,
-                                borderRadius: BorderRadius.circular(5),
-                              ),
-                              child: Text(
-                                "Spray time: ${timeduration.toStringAsFixed(2)} min",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
-                                  fontFamily: GoogleFonts.poppins().fontFamily,
-                                ),
-                              ),
-                            ),
-                            Container(
-                              padding: EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.deepPurple,
-                                borderRadius: BorderRadius.circular(5),
-                              ),
-                              child: Text(
-                                "UGV Speed: 10m/s",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
-                                  fontFamily: GoogleFonts.poppins().fontFamily,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                              _CardItem(
+                                title: 'UGV',
+                                icon: Icons.speed,
 
-                        const SizedBox(height: 10),
+                                value: '10m/s',
+                                color: Colors.cyan[800]!,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 5),
 
                         // Row 2: Progress bars for remaining fields
                         Column(
@@ -2792,49 +2695,70 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 Row(
                                   children: [
                                     const Icon(
-                                      Icons
-                                          .shower_outlined, // replace with your desired icon
+                                      Icons.shower_outlined, // replace with your desired icon
                                       color: Colors.black87,
                                       weight: 10,
                                     ),
-                                    SizedBox(
-                                        width:
-                                            5), // space between icon and text
+                                    const SizedBox(width: 5), // space between icon and text
                                     Text(
                                       "Rem Spray:",
                                       style: TextStyle(
                                         color: Colors.amber[900],
                                         fontWeight: FontWeight.w600,
                                         fontSize: 14,
-                                        fontFamily:
-                                            GoogleFonts.poppins().fontFamily,
+                                        fontFamily: GoogleFonts.poppins().fontFamily,
                                       ),
                                     ),
                                   ],
                                 ),
                                 const SizedBox(width: 10),
+
                                 Expanded(
-                                  child: AnimatedOpacity(
-                                    duration: const Duration(seconds: 1),
-                                    opacity: 1,
-                                    child: LinearPercentIndicator(
-                                      lineHeight: 10,
-                                      percent:
-                                          _remainingDistanceKM_SelectedPath /
-                                              _totalDistanceKM,
-                                      linearGradient: const LinearGradient(
-                                        colors: [Colors.green, Colors.red],
+                                  child: Stack(
+                                    alignment: Alignment.bottomLeft,
+                                    children: [
+                                      // The bottle image
+                                      Image.asset(
+                                        'images/spray.png', // Your sprayer image asset path
+                                        height: 100, // Adjust size as needed
+                                        width: 70, // Adjust size as needed
+                                        fit: BoxFit.contain,
                                       ),
-                                      backgroundColor: Colors.grey,
-                                      // Add borderRadius to make the bar rounded
-                                      barRadius: const Radius.circular(10),
-                                    ),
+                                      // Remaining spray represented by a container
+                                      Positioned(
+                                        bottom: 16.1, // Align with the bottom of the bottle body
+                                        left: 3.5, // Adjust left offset if necessary
+
+                                        // Wrap the FractionallySizedBox inside a SizedBox with a fixed height
+                                        child: SizedBox(
+                                          height: 42, // Adjust to fit the height of the bottle body
+                                          child: FractionallySizedBox(
+                                            alignment: Alignment.bottomLeft,
+                                            heightFactor: (_totalDistanceKM != 0)
+                                                ? _remainingDistanceKM_SelectedPath / _totalDistanceKM
+                                                : 0.0, // Proportional height
+                                            child: Container(
+                                              width: 20, // Width matching the image or as needed
+                                              decoration: BoxDecoration(
+                                                gradient: const LinearGradient(
+                                                  colors: [Colors.red, Colors.greenAccent],
+                                                  begin: Alignment.bottomCenter,
+                                                  end: Alignment.topCenter,
+                                                ),
+                                                borderRadius: BorderRadius.circular(7), // Rounded edges for the liquid
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
+
+
                               ],
                             ),
 
-                            const SizedBox(height: 8),
 
                             // Rem Dis label and progress bar
                             Row(
@@ -2842,21 +2766,17 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 Row(
                                   children: [
                                     const Icon(
-                                      Icons
-                                          .route_outlined, // replace with your desired icon
+                                      Icons.route_outlined, // replace with your desired icon
                                       color: Colors.black87,
                                     ),
-                                    SizedBox(
-                                        width:
-                                            5), // space between icon and text
+                                    const SizedBox(width: 5), // space between icon and text
                                     Text(
                                       "Rem Dis:",
                                       style: TextStyle(
                                         color: Colors.indigo[800],
                                         fontWeight: FontWeight.w600,
                                         fontSize: 14,
-                                        fontFamily:
-                                            GoogleFonts.poppins().fontFamily,
+                                        fontFamily: GoogleFonts.poppins().fontFamily,
                                       ),
                                     ),
                                   ],
@@ -2866,20 +2786,31 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                   child: AnimatedOpacity(
                                     duration: const Duration(seconds: 1),
                                     opacity: 1,
-                                    child: LinearPercentIndicator(
-                                      lineHeight: 10,
-                                      percent: _remainingDistanceKM_TotalPath /
-                                          totalZigzagPathKm,
-                                      linearGradient: const LinearGradient(
-                                        colors: [Colors.green, Colors.red],
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        border: Border.all(color: Colors.black, width: 1.3), // Black border
+                                        borderRadius: const BorderRadius.all(Radius.circular(10)),
                                       ),
-                                      backgroundColor: Colors.grey,
-                                      barRadius: const Radius.circular(10),
+                                      child: LinearPercentIndicator(
+                                        lineHeight: 10,
+                                        percent: (_remainingDistanceKM_TotalPath != null && totalZigzagPathKm != null && totalZigzagPathKm != 0)
+                                            ? _remainingDistanceKM_TotalPath / totalZigzagPathKm
+                                            : 0.0, // default to 0 if values are invalid
+                                        linearGradient: const LinearGradient(
+                                          colors: [Colors.red, Colors.greenAccent], // White internal color and green accent
+                                        ),
+                                        backgroundColor: Colors.grey[200],
+                                        barRadius: const Radius.circular(10),
+                                        padding: EdgeInsets.zero, // Remove extra padding
+                                      ),
                                     ),
                                   ),
                                 ),
+
+
                               ],
                             ),
+
                             const SizedBox(height: 8),
 
                             // Rem Time label and progress bar
@@ -2888,21 +2819,17 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 Row(
                                   children: [
                                     const Icon(
-                                      Icons
-                                          .timer_outlined, // replace with your desired icon
+                                      Icons.timer_outlined, // replace with your desired icon
                                       color: Colors.black87,
                                     ),
-                                    SizedBox(
-                                        width:
-                                            5), // space between icon and text
+                                    const SizedBox(width: 5), // space between icon and text
                                     Text(
                                       "Rem Time:",
                                       style: TextStyle(
                                         color: Colors.red,
                                         fontWeight: FontWeight.w600,
                                         fontSize: 14,
-                                        fontFamily:
-                                            GoogleFonts.poppins().fontFamily,
+                                        fontFamily: GoogleFonts.poppins().fontFamily,
                                       ),
                                     ),
                                   ],
@@ -2912,21 +2839,38 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                   child: AnimatedOpacity(
                                     duration: const Duration(seconds: 1),
                                     opacity: 1,
-                                    child: LinearPercentIndicator(
-                                      lineHeight: 10,
-                                      percent: TLM / timeduration,
-                                      linearGradient: const LinearGradient(
-                                        colors: [Colors.green, Colors.red],
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        border: Border.all(color: Colors.black, width: 1.3), // Black border
+                                        borderRadius: const BorderRadius.all(Radius.circular(10)),
                                       ),
-                                      backgroundColor: Colors.grey,
-                                      barRadius: const Radius.circular(10),
+                                      child: LinearPercentIndicator(
+                                        lineHeight: 10,
+                                        percent: (TLM != null && timeduration != null && timeduration != 0)
+                                            ? TLM / timeduration
+                                            : 0.0, // default to 0 if values are invalid
+                                        linearGradient: const LinearGradient(
+                                          colors: [Colors.red, Colors.greenAccent], // White internal color with green accent
+                                        ),
+                                        backgroundColor: Colors.grey[200],
+                                        barRadius: const Radius.circular(10),
+                                        padding: EdgeInsets.zero, // Remove extra padding
+                                      ),
                                     ),
                                   ),
                                 ),
+
+
+
+
                               ],
                             ),
                           ],
                         ),
+
+
+
+
                       ],
                     ),
                   ),
@@ -3694,4 +3638,62 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     return areaInAcres;
   }*/
+}
+
+
+
+
+class _CardItem extends StatelessWidget {
+  final String title;
+  final String value;
+  final Color color;
+  final IconData icon;
+
+  _CardItem({required this.title, required this.value, required this.color, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Card(
+        elevation: 8,
+        color: color,
+        child: Padding(
+          padding: const EdgeInsets.all(4.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: GoogleFonts.poppins().fontFamily,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+
+                  Icon(icon, color: Colors.white, size: 18),
+
+                ],
+              ),
+              Text(
+                value,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: GoogleFonts.poppins().fontFamily,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

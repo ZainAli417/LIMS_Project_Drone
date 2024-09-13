@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui';
+import 'package:file_picker/file_picker.dart';
 import 'package:image/image.dart' as img;
 import 'dart:typed_data';
 import 'dart:ui' as ui; // Make sure to prefix dart:ui imports with 'ui'
@@ -20,7 +22,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:path/path.dart' as path;
 import 'package:flutter/services.dart';
 import 'package:percent_indicator/linear_percent_indicator.dart';
 import 'package:project_drone/Screens/homescreen.dart';
@@ -120,7 +122,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
   double pathWidth = 10.0;
   bool _isHorizontalDirection = false;
   late LatLng? selectedMarker =
-  _markers.isNotEmpty ? _markers.first.position : null;
+      _markers.isNotEmpty ? _markers.first.position : null;
 
   late GoogleMapController _googleMapController;
   final DatabaseReference _databaseReference = FirebaseDatabase.instance.ref();
@@ -134,7 +136,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
   Set<String> _selectedPathIds = {};
 
   //USER SELECTION RECEIPT
-
+  String? _selectedLocalFilePath;
   String _selectedMethod = 'N/A'; // Variable to store selected method
   String? _selectedFileSource =
       'N/A in Manual Mode'; // To store the file source (Local or Cloud)
@@ -198,11 +200,13 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     return totalDistance;
   } // Return distance in kilometers
+
   LatLng _lerpLatLng(LatLng a, LatLng b, double t) {
     double lat = a.latitude + (b.latitude - a.latitude) * t;
     double lng = a.longitude + (b.longitude - a.longitude) * t;
     return LatLng(lat, lng);
   }
+
   void _storeTimeDurationInDatabase(double totalDistanceInKM) {
     try {
       const double speed = 10; // Speed in meters per second
@@ -216,6 +220,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error storing time duration in database: $e');
     }
   }
+
   void _storeTimeLeftInDatabase(double remainingDistanceKM_SelectedPath) async {
     try {
       const double speed = 10; // Speed in meters per second
@@ -229,6 +234,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error storing time duration in database: $e');
     }
   }
+
   double calculateonelinedistance(LatLng start, LatLng end) {
     const R = 6371; // Radius of the Earth in kilometers
     double lat1 = start.latitude * pi / 180;
@@ -242,6 +248,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     double c = 2 * atan2(sqrt(a), sqrt(1 - a));
     return R * c; // Distance in kilometers
   }
+
   double _calculateTotalDistanceZIGAG(List<LatLng> path) {
     double totalzigzagdis = 0.0;
     for (int i = 0; i < path.length - 1; i++) {
@@ -249,14 +256,17 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     return totalzigzagdis;
   } // Return distance in kilometers
+
   void _startMovement(List<LatLng> path, List<List<LatLng>> selectedSegments) {
     if (path.isEmpty || _selectedStartingPoint == null) {
-      print("Path is empty or starting point not selected, cannot start movement");
+      print(
+          "Path is empty or starting point not selected, cannot start movement");
       return;
     }
 
     // Find the nearest point on the path to the selected starting point
-    int startingPointIndex = _findClosestPointIndex(path, _selectedStartingPoint!);
+    int startingPointIndex =
+        _findClosestPointIndex(path, _selectedStartingPoint!);
 
     // Set the car's initial position to the selected starting point
     setState(() {
@@ -265,7 +275,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
     });
 
     // Decide the direction-specific marker function
-    Add_Car_Marker(_isSegmentSelected(path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
+    Add_Car_Marker(_isSegmentSelected(
+        path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
 
     double updateInterval = 0.1; // seconds
     _isMoving = true;
@@ -279,131 +290,158 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     // Start movement with timer
     _movementTimer = Timer.periodic(
-        Duration(milliseconds: (updateInterval * 1000).toInt()),
-            (timer) async {
-          if (_isMoving) {
-            if (movingForward) {
-              if (_currentPointIndex < path.length - 1) {
-                LatLng start = path[_currentPointIndex];
-                LatLng end = path[_currentPointIndex + 1];
-                double segmentDistanceKM = calculateonelinedistance(start, end);
-                double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
-                segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-                double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
-                _carPosition = _lerpLatLng(start, end, segmentProgress);
+        Duration(milliseconds: (updateInterval * 1000).toInt()), (timer) async {
+      if (_isMoving) {
+        if (movingForward) {
+          if (_currentPointIndex < path.length - 1) {
+            LatLng start = path[_currentPointIndex];
+            LatLng end = path[_currentPointIndex + 1];
+            double segmentDistanceKM = calculateonelinedistance(start, end);
+            double distanceCoveredInThisTickKM =
+                (speed * updateInterval) / 1000.0;
+            segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+            double segmentProgress =
+                (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+            _carPosition = _lerpLatLng(start, end, segmentProgress);
 
-                bool isSelectedSegment = _isSegmentSelected(
-                  path,
-                  selectedSegments,
-                  _currentPointIndex,
-                  _isHorizontalDirection ? PathDirection.horizontal : PathDirection.vertical,
-                );
+            bool isSelectedSegment = _isSegmentSelected(
+              path,
+              selectedSegments,
+              _currentPointIndex,
+              _isHorizontalDirection
+                  ? PathDirection.horizontal
+                  : PathDirection.vertical,
+            );
 
-                distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+            distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
 
-                if (isSelectedSegment) {
-                  totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
-                  double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
-                  setState(() {
-                    _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
-                    _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
-                  });
+            if (isSelectedSegment) {
+              totalDistanceCoveredKM_SelectedPath +=
+                  distanceCoveredInThisTickKM;
+              double remainingDistanceKM_SelectedPath =
+                  _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+              setState(() {
+                _remainingDistanceKM_SelectedPath =
+                    remainingDistanceKM_SelectedPath.clamp(
+                        0.0, _totalDistanceKM);
+                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+              });
 
-                  if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
-                    FirebaseDatabase.instance.ref().child('remainingDistance').set(_remainingDistanceKM_SelectedPath);
-                  }
-                }
-
-                setState(() {
-                  _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
-                });
-
-                // Update car marker position
-                setState(() {
-                  _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
-                  Add_Car_Marker(isSelectedSegment);
-
-                  if (segmentProgress >= 1.0) {
-                    _currentPointIndex++;
-                    segmentDistanceCoveredKM = 0.0;
-                  }
-                });
-
-                if (_currentPointIndex >= path.length - 1) {
-                  _isMoving = false;
-                  timer.cancel();
-                  _onPathComplete();
-                }
-              } else {
-                _movementTimer?.cancel();
-                _isMoving = false;
-                timer.cancel();
-                _onPathComplete();
-              }
-            } else {
-              if (_currentPointIndex > 0) {
-                LatLng start = path[_currentPointIndex];
-                LatLng end = path[_currentPointIndex - 1];
-                double segmentDistanceKM = calculateonelinedistance(start, end);
-                double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
-                segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-                double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
-                _carPosition = _lerpLatLng(start, end, segmentProgress);
-
-                bool isSelectedSegment = _isSegmentSelected(
-                  path,
-                  selectedSegments,
-                  _currentPointIndex - 1,
-                  _isHorizontalDirection ? PathDirection.horizontal : PathDirection.vertical,
-                );
-
-                distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
-
-                if (isSelectedSegment) {
-                  totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
-                  double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
-                  setState(() {
-                    _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
-                    _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
-                  });
-
-                  if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
-                    FirebaseDatabase.instance.ref().child('remainingDistance').set(_remainingDistanceKM_SelectedPath);
-                  }
-                }
-
-                setState(() {
-                  _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
-                });
-
-                // Update car marker position
-                setState(() {
-                  _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
-
-                  Add_Car_Marker(isSelectedSegment);
-
-
-                  if (segmentProgress >= 1.0) {
-                    _currentPointIndex--;
-                    segmentDistanceCoveredKM = 0.0;
-                  }
-                });
-
-                if (_currentPointIndex <= 0) {
-                  _isMoving = false;
-                  timer.cancel();
-                  _onPathComplete();
-                }
-              } else {
-                _movementTimer?.cancel();
-                _isMoving = false;
-                timer.cancel();
-                _onPathComplete();
+              if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
+                FirebaseDatabase.instance
+                    .ref()
+                    .child('remainingDistance')
+                    .set(_remainingDistanceKM_SelectedPath);
               }
             }
+
+            setState(() {
+              _remainingDistanceKM_TotalPath =
+                  (totalZigzagPathKm - distanceCoveredInWholeJourney)
+                      .clamp(0.0, totalZigzagPathKm);
+            });
+
+            // Update car marker position
+            setState(() {
+              _markers.removeWhere(
+                  (marker) => marker.markerId == const MarkerId('car'));
+              Add_Car_Marker(isSelectedSegment);
+
+              if (segmentProgress >= 1.0) {
+                _currentPointIndex++;
+                segmentDistanceCoveredKM = 0.0;
+              }
+            });
+
+            if (_currentPointIndex >= path.length - 1) {
+              _isMoving = false;
+              timer.cancel();
+              _onPathComplete();
+            }
+          } else {
+            _movementTimer?.cancel();
+            _isMoving = false;
+            timer.cancel();
+            _onPathComplete();
           }
-        });
+        } else {
+          if (_currentPointIndex > 0) {
+            LatLng start = path[_currentPointIndex];
+            LatLng end = path[_currentPointIndex - 1];
+            double segmentDistanceKM = calculateonelinedistance(start, end);
+            double distanceCoveredInThisTickKM =
+                (speed * updateInterval) / 1000.0;
+            segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+            double segmentProgress =
+                (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+            _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+            bool isSelectedSegment = _isSegmentSelected(
+              path,
+              selectedSegments,
+              _currentPointIndex - 1,
+              _isHorizontalDirection
+                  ? PathDirection.horizontal
+                  : PathDirection.vertical,
+            );
+
+            distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+
+            if (isSelectedSegment) {
+              totalDistanceCoveredKM_SelectedPath +=
+                  distanceCoveredInThisTickKM;
+              double remainingDistanceKM_SelectedPath =
+                  _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+              setState(() {
+                _remainingDistanceKM_SelectedPath =
+                    remainingDistanceKM_SelectedPath.clamp(
+                        0.0, _totalDistanceKM);
+                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+              });
+
+              if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
+                FirebaseDatabase.instance
+                    .ref()
+                    .child('remainingDistance')
+                    .set(_remainingDistanceKM_SelectedPath);
+              }
+            }
+
+            setState(() {
+              _remainingDistanceKM_TotalPath =
+                  (totalZigzagPathKm - distanceCoveredInWholeJourney)
+                      .clamp(0.0, totalZigzagPathKm);
+            });
+
+            // Update car marker position
+            setState(() {
+              _markers.removeWhere(
+                  (marker) => marker.markerId == const MarkerId('car'));
+
+              Add_Car_Marker(isSelectedSegment);
+
+              if (segmentProgress >= 1.0) {
+                _currentPointIndex--;
+                segmentDistanceCoveredKM = 0.0;
+              }
+            });
+
+            if (_currentPointIndex <= 0) {
+              _isMoving = false;
+              timer.cancel();
+              _onPathComplete();
+            }
+          } else {
+            _movementTimer?.cancel();
+            _isMoving = false;
+            timer.cancel();
+            _onPathComplete();
+          }
+        }
+      }
+    });
   }
+
 // Helper function to find the closest point in the path to the selected starting point
   int _findClosestPointIndex(List<LatLng> path, LatLng startingPoint) {
     if (path.isEmpty) return -1; // No path, return invalid index
@@ -423,6 +461,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     return closestIndex; // Return the index of the closest point
   }
+
   void Selecting_Path_Direction_and_Turn() {
     bool isStartingPointEmpty = false; // Validation flag for the dropdown
 
@@ -507,7 +546,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                             onChanged: (PathDirection? value) {
                               setState(() {
                                 _selectedDirection = value!;
-                                _isHorizontalDirection = (value == PathDirection.horizontal);
+                                _isHorizontalDirection =
+                                    (value == PathDirection.horizontal);
                               });
                             },
                           ),
@@ -525,7 +565,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                             onChanged: (PathDirection? value) {
                               setState(() {
                                 _selectedDirection = value!;
-                                _isHorizontalDirection = (value == PathDirection.horizontal);
+                                _isHorizontalDirection =
+                                    (value == PathDirection.horizontal);
                               });
                             },
                           ),
@@ -561,8 +602,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       value: _selectedStartingPoint,
                       isExpanded: true,
                       items: (_isCustomMode
-                          ? _markers
-                          : _markers.sublist(0, _markers.length - 1))
+                              ? _markers
+                              : _markers.sublist(0, _markers.length - 1))
                           .map((marker) {
                         return DropdownMenuItem<LatLng>(
                           value: marker.position,
@@ -573,7 +614,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         setState(() {
                           _selectedStartingPoint = newValue;
                           _selectedMarkerId = _markers
-                              .firstWhere((marker) => marker.position == newValue)
+                              .firstWhere(
+                                  (marker) => marker.position == newValue)
                               .markerId;
                           isStartingPointEmpty = false; // Reset error state
 
@@ -581,11 +623,15 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           _markers = _markers.map((marker) {
                             if (marker.markerId == _selectedMarkerId) {
                               return marker.copyWith(
-                                iconParam: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+                                iconParam:
+                                    BitmapDescriptor.defaultMarkerWithHue(
+                                        BitmapDescriptor.hueGreen),
                               );
                             } else {
                               return marker.copyWith(
-                                iconParam: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+                                iconParam:
+                                    BitmapDescriptor.defaultMarkerWithHue(
+                                        BitmapDescriptor.hueAzure),
                               );
                             }
                           }).toList();
@@ -656,12 +702,14 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
+
   void _onPathComplete() {
     // Clear all paths and stop movement
     setState(() {
       _isMoving = false;
       _movementTimer?.cancel();
-      _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
+      _markers
+          .removeWhere((marker) => marker.markerId == const MarkerId('car'));
     });
 
     _screenshotController.capture().then((Uint8List? capturedBytes) {
@@ -673,8 +721,10 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error capturing screenshot: $e');
     });
   }
+
 // Check if the current segment is part of the selected route
-  bool _isSegmentSelected(List<LatLng> path, List<List<LatLng>> selectedSegments, int index, PathDirection direction) {
+  bool _isSegmentSelected(List<LatLng> path,
+      List<List<LatLng>> selectedSegments, int index, PathDirection direction) {
     if (index < path.length - 1) {
       LatLng start = path[index];
       LatLng end = path[index + 1];
@@ -694,7 +744,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     return false;
   }
 
-
   Future<void> _loadCarIcons() async {
     // Load the image from your assets
     const ImageConfiguration imageConfiguration = ImageConfiguration(
@@ -711,6 +760,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       //'images/ugv_active.png', // Replace with your actual asset path
     );
   }
+
   Future<void> Add_Car_Marker(bool isSelectedSegment) async {
     setState(() {
       _markers.add(Marker(
@@ -722,36 +772,39 @@ class _Fetch_InputState extends State<Fetch_Input> {
       ));
     });
   }
+
 // Check if two horizontal segments are equal
   bool _isHorizontalSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
     return (segment1[0].latitude == segment2[0].latitude &&
-        segment1[1].latitude == segment2[1].latitude &&
-        (segment1[0].longitude == segment2[0].longitude &&
-            segment1[1].longitude == segment2[1].longitude ||
-            segment1[0].longitude == segment2[1].longitude &&
-                segment1[1].longitude == segment2[0].longitude)) ||
+            segment1[1].latitude == segment2[1].latitude &&
+            (segment1[0].longitude == segment2[0].longitude &&
+                    segment1[1].longitude == segment2[1].longitude ||
+                segment1[0].longitude == segment2[1].longitude &&
+                    segment1[1].longitude == segment2[0].longitude)) ||
         (segment1[0].latitude == segment2[1].latitude &&
             segment1[1].latitude == segment2[0].latitude &&
             (segment1[0].longitude == segment2[0].longitude &&
-                segment1[1].longitude == segment2[1].longitude ||
+                    segment1[1].longitude == segment2[1].longitude ||
                 segment1[0].longitude == segment2[1].longitude &&
                     segment1[1].longitude == segment2[0].longitude));
   }
+
 // Check if two vertical segments are equal
   bool _isVerticalSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
     return (segment1[0].longitude == segment2[0].longitude &&
-        segment1[1].longitude == segment2[1].longitude &&
-        (segment1[0].latitude == segment2[0].latitude &&
-            segment1[1].latitude == segment2[1].latitude ||
-            segment1[0].latitude == segment2[1].latitude &&
-                segment1[1].latitude == segment2[0].latitude)) ||
+            segment1[1].longitude == segment2[1].longitude &&
+            (segment1[0].latitude == segment2[0].latitude &&
+                    segment1[1].latitude == segment2[1].latitude ||
+                segment1[0].latitude == segment2[1].latitude &&
+                    segment1[1].latitude == segment2[0].latitude)) ||
         (segment1[0].longitude == segment2[1].longitude &&
             segment1[1].longitude == segment2[0].longitude &&
             (segment1[0].latitude == segment2[0].latitude &&
-                segment1[1].latitude == segment2[1].latitude ||
+                    segment1[1].latitude == segment2[1].latitude ||
                 segment1[0].latitude == segment2[1].latitude &&
                     segment1[1].latitude == segment2[0].latitude));
   }
+
   void ShowSuccessDialog(Uint8List screenshotBytes) {
     showDialog(
       context: context,
@@ -828,221 +881,296 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
+
   void setup_hardware() {
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: Colors.white,
-          titlePadding: EdgeInsets.zero, // Remove default padding
-          title: Container(
-            padding: const EdgeInsets.fromLTRB(10, 5, 10, 5), // Adjust padding inside the header
-            decoration: BoxDecoration(
-              color: Colors.indigo[800], // Indigo background color for header
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(20), // Rounded corners for the top
-                topRight: Radius.circular(20),
+        return SizedBox(
+          width: 500, // Adjust the width
+
+          height: 700, // Adjust the height
+
+          child: AlertDialog(
+            backgroundColor: Colors.white,
+
+            titlePadding: EdgeInsets.zero, // Remove default padding
+
+            title: Container(
+              padding: const EdgeInsets.fromLTRB(
+                  10, 5, 10, 5), // Adjust padding inside the header
+
+              decoration: BoxDecoration(
+                color: Colors.indigo[800], // Indigo background color for header
+
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(20), // Rounded corners for the top
+
+                  topRight: Radius.circular(20),
+                ),
+              ),
+
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Your Settings',
+                    style: GoogleFonts.poppins(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white, // White text for better contrast
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close,
+                        color: Colors.white), // White close icon
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                  ),
+                ],
               ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Your Settings',
-                  style: GoogleFonts.poppins(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white, // White text for better contrast
+                RichText(
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: 'Your Coordinate Method: ',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.black, // Black color for the label
+                        ),
+                      ),
+                      TextSpan(
+                        text: _selectedMethod,
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors
+                              .indigo[800], // Indigo color for the method value
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white), // White close icon
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
+                const SizedBox(height: 10),
+                RichText(
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: 'Your File Selection Mode: ',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.black, // Black color for the label
+                        ),
+                      ),
+                      TextSpan(
+                        text: _selectedFileSource,
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.indigo[
+                              800], // Indigo color for the file source value
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                RichText(
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: 'Your Selected File: ',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.black, // Black color for the label
+                        ),
+                      ),
+                      TextSpan(
+                        text:
+                            _selectedLocalFile ?? _selectedCloudFile ?? 'None',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.indigo[
+                              800], // Indigo color for the selected file value
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                RichText(
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: 'Your Turn Length: ',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.black, // Black color for the label
+                        ),
+                      ),
+                      TextSpan(
+                        text: _turnLength.toStringAsFixed(
+                            1), // Format the double to 2 decimal places
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.indigo[
+                              800], // Indigo color for the turn length value
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                RichText(
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: 'Your Path Direction: ',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.black, // Black color for the label
+                        ),
+                      ),
+                      TextSpan(
+                        text: _selectedDirection == PathDirection.horizontal
+                            ? 'Horizontal'
+                            : 'Vertical',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.indigo[
+                              800], // Indigo color for the path direction value
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                RichText(
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: 'Your Starting Point is: ',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.black, // Black color for the label
+                        ),
+                      ),
+                      TextSpan(
+                        text: _selectedStartingPoint != null
+                            ? 'Lat: ${_selectedStartingPoint!.latitude.toStringAsFixed(3)}, Lng: ${_selectedStartingPoint!.longitude.toStringAsFixed(3)}'
+                            : 'None',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.indigo[
+                              800], // Indigo color for the starting point value
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: 'Your Coordinate Method: ',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                        color: Colors.black, // Black color for the label
+            actions: <Widget>[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  SizedBox(
+                    width: 110, // Set the width of the button
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF037441),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: () {
+                        Navigator.of(context).pop(); // Close the dialog
+                        Selecting_Path_Direction_and_Turn(); // Call function to select path direction and turn
+                      },
+                      child: Row(
+                        mainAxisSize: MainAxisSize.max,
+                        children: [
+                          Text(
+                            'Edit',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(
+                              width: 9), // Reduced space between icon and text
+                          const Icon(Icons.edit,
+                              color: Colors.white,
+                              size: 16), // Reduced icon size
+                        ],
                       ),
                     ),
-                    TextSpan(
-                      text: _selectedMethod,
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.indigo[800], // Indigo color for the method value
+                  ),
+                  SizedBox(
+                    width: 133, // Set the width of the button
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo[800],
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: () {
+                        Navigator.of(context).pop(); // Close the dialog
+
+                        // Check the selected direction and call the appropriate function
+                        if (_selectedDirection == PathDirection.vertical) {
+                          _showVerticalRoutesDialog(); // Call vertical path dialog
+                        } else {
+                          _showHorizontalRoutesDialog(); // Call horizontal path dialog
+                        }
+                      },
+                      child: Row(
+                        mainAxisSize: MainAxisSize.max,
+                        children: [
+                          Text(
+                            'Proceed',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(
+                              width: 9), // Reduced space between icon and text
+                          const Icon(Icons.arrow_forward_ios,
+                              color: Colors.white,
+                              size: 16), // Reduced icon size
+                        ],
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: 'Your File Selection Mode: ',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                        color: Colors.black, // Black color for the label
-                      ),
-                    ),
-                    TextSpan(
-                      text: _selectedFileSource,
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.indigo[800], // Indigo color for the file source value
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: 'Your Selected File: ',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                        color: Colors.black, // Black color for the label
-                      ),
-                    ),
-                    TextSpan(
-                      text: _selectedLocalFile ?? _selectedCloudFile ?? 'None',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.indigo[800], // Indigo color for the selected file value
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: 'Your Turn Length: ',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                        color: Colors.black, // Black color for the label
-                      ),
-                    ),
-                    TextSpan(
-                      text: _turnLength.toStringAsFixed(1), // Format the double to 2 decimal places
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.indigo[800], // Indigo color for the turn length value
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: 'Your Path Direction: ',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                        color: Colors.black, // Black color for the label
-                      ),
-                    ),
-                    TextSpan(
-                      text: _selectedDirection == PathDirection.horizontal
-                          ? 'Horizontal'
-                          : 'Vertical',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.indigo[800], // Indigo color for the path direction value
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: 'Your Starting Point is: ',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                        color: Colors.black, // Black color for the label
-                      ),
-                    ),
-                    TextSpan(
-                      text: _selectedStartingPoint != null
-                          ? 'Lat: ${_selectedStartingPoint!.latitude.toStringAsFixed(3)}, Lng: ${_selectedStartingPoint!.longitude.toStringAsFixed(3)}'
-                          : 'None',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.indigo[800], // Indigo color for the starting point value
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ],
           ),
-          actions: <Widget>[
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.indigo[800],
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              onPressed: () {
-                Navigator.of(context).pop(); // Close the dialog
-
-                // Check the selected direction and call the appropriate function
-                if (_selectedDirection == PathDirection.vertical) {
-                  _showVerticalRoutesDialog(); // Call vertical path dialog
-                } else {
-                  _showHorizontalRoutesDialog(); // Call horizontal path dialog
-                }
-              },
-              child: Text(
-                'Proceed',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ],
         );
       },
     );
   }
+
   void _showHorizontalRoutesDialog() {
     List<int> selectedSegments = [];
 
@@ -1096,7 +1224,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           // Select all routes
                           selectedSegments = List.generate(
                             _dronepath.length ~/ 2,
-                                (i) => i,
+                            (i) => i,
                           );
                         });
                       },
@@ -1149,11 +1277,16 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         ),
                       ),
                       onPressed: () {
-                        Navigator.of(context).pop();
 
-                        if (selectedSegments.isEmpty) {
+
+                        if (selectedSegments.isEmpty)
+                        {
                           _showWarningDialog(context);
                           return;
+                        }
+                        else
+                        {
+                          Navigator.of(context).pop();
                         }
 
                         List<List<LatLng>> selectedPaths = [];
@@ -1167,7 +1300,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           );
                           selectedPaths.add(segment);
                           double segmentDistance =
-                          calculate_selcted_segemnt_distance(segment);
+                              calculate_selcted_segemnt_distance(segment);
                           totalDistance += segmentDistance;
                         }
 
@@ -1208,6 +1341,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
+
   void _showVerticalRoutesDialog() {
     List<int> selectedSegments = [];
     List<List<LatLng>> verticalPaths = _allPaths;
@@ -1261,7 +1395,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         setState(() {
                           selectedSegments = List.generate(
                             verticalPaths.length,
-                                (i) => i,
+                            (i) => i,
                           );
                         });
                       },
@@ -1314,11 +1448,14 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         ),
                       ),
                       onPressed: () {
-                        Navigator.of(context).pop();
-
                         if (selectedSegments.isEmpty) {
                           _showWarningDialog(context);
                           return;
+
+                        }
+                        else{
+                          Navigator.of(context).pop();
+
                         }
 
                         List<List<LatLng>> selectedPaths = [];
@@ -1327,7 +1464,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         for (int index in selectedSegments) {
                           selectedPaths.add(verticalPaths[index]);
                           double segmentDistance =
-                          calculate_selcted_segemnt_distance(verticalPaths[index]);
+                              calculate_selcted_segemnt_distance(
+                                  verticalPaths[index]);
                           totalDistance += segmentDistance;
                         }
 
@@ -1343,7 +1481,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           _selectedPathsQueue.addAll(selectedPaths);
 
                           // Update polyline colors
-                          _updatePolylineColors(selectedSegments, isVertical: true);
+                          _updatePolylineColors(selectedSegments,
+                              isVertical: true);
                         });
 
                         if (!_isMoving) {
@@ -1368,15 +1507,19 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
-  void _updatePolylineColors(List<int> selectedSegments, {bool isVertical = false}) {
+
+  void _updatePolylineColors(List<int> selectedSegments,
+      {bool isVertical = false}) {
     setState(() {
       // Update horizontal paths
       if (!isVertical) {
-        _polylines.removeWhere((polyline) => polyline.polylineId.value == 'dronepath');
+        _polylines.removeWhere(
+            (polyline) => polyline.polylineId.value == 'dronepath');
         for (int i = 0; i < _dronepath.length ~/ 2; i++) {
           int startIndex = i * 2;
           List<LatLng> segment = _dronepath.sublist(startIndex, startIndex + 2);
-          Color color = selectedSegments.contains(i) ? Colors.green : Colors.red;
+          Color color =
+              selectedSegments.contains(i) ? Colors.green : Colors.red;
           _polylines.add(Polyline(
             polylineId: PolylineId('dronepath_$i'),
             points: segment,
@@ -1386,10 +1529,12 @@ class _Fetch_InputState extends State<Fetch_Input> {
         }
       } else {
         // Update vertical paths
-        _polylines.removeWhere((polyline) => polyline.polylineId.value == 'verticalpath');
+        _polylines.removeWhere(
+            (polyline) => polyline.polylineId.value == 'verticalpath');
         for (int i = 0; i < _allPaths.length; i++) {
           List<LatLng> segment = _allPaths[i];
-          Color color = selectedSegments.contains(i) ? Colors.green : Colors.red;
+          Color color =
+              selectedSegments.contains(i) ? Colors.green : Colors.red;
           _polylines.add(Polyline(
             polylineId: PolylineId('verticalpath_$i'),
             points: segment,
@@ -1442,7 +1587,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
-  void dronepath_Horizontal(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
+
+  void dronepath_Horizontal(
+      List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
 
     List<LatLng> sortedByLat = List.from(polygon)
@@ -1470,19 +1617,24 @@ class _Fetch_InputState extends State<Fetch_Input> {
         if ((p1.latitude <= lat && p2.latitude >= lat) ||
             (p1.latitude >= lat && p2.latitude <= lat)) {
           double lng = p1.longitude +
-              (lat - p1.latitude) * (p2.longitude - p1.longitude) /
+              (lat - p1.latitude) *
+                  (p2.longitude - p1.longitude) /
                   (p2.latitude - p1.latitude);
           intersections.add(LatLng(lat, lng.clamp(minLng, maxLng)));
         }
       }
       if (intersections.length == 2) {
         intersections.sort((a, b) => a.longitude.compareTo(b.longitude));
-        straightPaths.add(leftToRight ? [intersections[0], intersections[1]] : [intersections[1], intersections[0]]);
+        straightPaths.add(leftToRight
+            ? [intersections[0], intersections[1]]
+            : [intersections[1], intersections[0]]);
         leftToRight = !leftToRight;
       }
     }
 
-    for (double lat = startLat - latIncrement; lat >= minLat; lat -= latIncrement) {
+    for (double lat = startLat - latIncrement;
+        lat >= minLat;
+        lat -= latIncrement) {
       List<LatLng> intersections = [];
       for (int i = 0; i < polygon.length; i++) {
         LatLng p1 = polygon[i];
@@ -1490,19 +1642,23 @@ class _Fetch_InputState extends State<Fetch_Input> {
         if ((p1.latitude <= lat && p2.latitude >= lat) ||
             (p1.latitude >= lat && p2.latitude <= lat)) {
           double lng = p1.longitude +
-              (lat - p1.latitude) * (p2.longitude - p1.longitude) /
+              (lat - p1.latitude) *
+                  (p2.longitude - p1.longitude) /
                   (p2.latitude - p1.latitude);
           intersections.add(LatLng(lat, lng.clamp(minLng, maxLng)));
         }
       }
       if (intersections.length == 2) {
         intersections.sort((a, b) => a.longitude.compareTo(b.longitude));
-        straightPaths.add(leftToRight ? [intersections[0], intersections[1]] : [intersections[1], intersections[0]]);
+        straightPaths.add(leftToRight
+            ? [intersections[0], intersections[1]]
+            : [intersections[1], intersections[0]]);
         leftToRight = !leftToRight;
       }
     }
 
-    List<LatLng> dronePath = straightPaths.expand((segment) => segment).toList();
+    List<LatLng> dronePath =
+        straightPaths.expand((segment) => segment).toList();
     dronePath.insert(0, startPoint);
 
     double totalDistancezigzagKm = _calculateTotalDistanceZIGAG(dronePath);
@@ -1524,7 +1680,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
       totalZigzagPathKm = totalDistancezigzagKm;
     });
   }
-  void dronepath_Vertical(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
+
+  void dronepath_Vertical(
+      List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
 
     List<LatLng> sortedByLng = List.from(polygon)
@@ -1548,19 +1706,24 @@ class _Fetch_InputState extends State<Fetch_Input> {
         if ((p1.longitude <= lng && p2.longitude >= lng) ||
             (p1.longitude >= lng && p2.longitude <= lng)) {
           double lat = p1.latitude +
-              (lng - p1.longitude) * (p2.latitude - p1.latitude) /
+              (lng - p1.longitude) *
+                  (p2.latitude - p1.latitude) /
                   (p2.longitude - p1.longitude);
           intersections.add(LatLng(lat, lng));
         }
       }
       if (intersections.length == 2) {
         intersections.sort((a, b) => a.latitude.compareTo(b.latitude));
-        straightPaths.add(bottomToTop ? [intersections[0], intersections[1]] : [intersections[1], intersections[0]]);
+        straightPaths.add(bottomToTop
+            ? [intersections[0], intersections[1]]
+            : [intersections[1], intersections[0]]);
         bottomToTop = !bottomToTop;
       }
     }
 
-    for (double lng = startLng - lngIncrement; lng >= minLng; lng -= lngIncrement) {
+    for (double lng = startLng - lngIncrement;
+        lng >= minLng;
+        lng -= lngIncrement) {
       List<LatLng> intersections = [];
       for (int i = 0; i < polygon.length; i++) {
         LatLng p1 = polygon[i];
@@ -1568,19 +1731,23 @@ class _Fetch_InputState extends State<Fetch_Input> {
         if ((p1.longitude <= lng && p2.longitude >= lng) ||
             (p1.longitude >= lng && p2.longitude <= lng)) {
           double lat = p1.latitude +
-              (lng - p1.longitude) * (p2.latitude - p1.latitude) /
+              (lng - p1.longitude) *
+                  (p2.latitude - p1.latitude) /
                   (p2.longitude - p1.longitude);
           intersections.add(LatLng(lat, lng));
         }
       }
       if (intersections.length == 2) {
         intersections.sort((a, b) => a.latitude.compareTo(b.latitude));
-        straightPaths.add(bottomToTop ? [intersections[0], intersections[1]] : [intersections[1], intersections[0]]);
+        straightPaths.add(bottomToTop
+            ? [intersections[0], intersections[1]]
+            : [intersections[1], intersections[0]]);
         bottomToTop = !bottomToTop;
       }
     }
 
-    List<LatLng> dronePath = straightPaths.expand((segment) => segment).toList();
+    List<LatLng> dronePath =
+        straightPaths.expand((segment) => segment).toList();
     dronePath.insert(0, startPoint);
 
     double totalDistancezigzagKm = _calculateTotalDistanceZIGAG(dronePath);
@@ -1600,12 +1767,14 @@ class _Fetch_InputState extends State<Fetch_Input> {
       totalZigzagPathKm = totalDistancezigzagKm;
     });
   }
+
 // Extracting LatLng points from markers
   void extractLatLngPoints() {
     if (polygons.isNotEmpty) {
       polygonPoints = polygons.first.points.toList();
     }
   }
+
   Future<void> _closePolygon(double turnLength) async {
     setState(() {
       _ismanual = true;
@@ -1635,6 +1804,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     }
   }
+
   Future<void> _requestLocationPermission() async {
     bool _serviceEnabled;
     PermissionStatus _permissionGranted;
@@ -1655,6 +1825,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     _currentLocation = await _location.getLocation();
     setState(() {});
   }
+
   void _initializeFirebaseListener() {
     _latRef = FirebaseDatabase.instance.ref().child('Current_Lat');
     _longRef = FirebaseDatabase.instance.ref().child('Current_Long');
@@ -1672,14 +1843,17 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     });
   }
+
   void _updateMarkerPosition(double lat, double long) {
     setState(() {
       _currentPosition = LatLng(lat, long);
     });
   }
+
   void _hideKeyboard() {
     FocusScope.of(context).previousFocus();
   }
+
   void _showInputSelectionPopup() {
     showModalBottomSheet(
       context: context,
@@ -1737,7 +1911,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                   _isCustomMode = true;
                   // _ismanual = true;
                   _selectedMethod =
-                  'Placing Markers Manually'; // Store selection
+                      'Placing Markers Manually'; // Store selection
                 });
                 Navigator.pop(context);
               },
@@ -1780,7 +1954,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
               onPressed: () {
                 setState(() {
                   _selectedMethod =
-                  'Load Coordinates From KML'; // Store selection
+                      'Load Coordinates From KML'; // Store selection
                 });
                 Navigator.pop(context);
                 _showFileSelectionPopup();
@@ -1800,10 +1974,10 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
+
+
   Future<void> _showFileSelectionPopup() async {
-    List<String> localFiles = await _getAssetFiles(); // Get list of local files
-    List<String> cloudFiles =
-    await _fetchCloudFiles(); // Get list of cloud files
+    List<String> cloudFiles = await _fetchCloudFiles(); // Get list of cloud files
 
     showDialog(
       context: context,
@@ -1854,8 +2028,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           setState(() {
                             _selectedFileSource = value;
                             _selectedLocalFile = null;
-                            _selectedCloudFile =
-                            null; // Reset the other selection
+                            _selectedCloudFile = null; // Reset the other selection
                           });
                         },
                       ),
@@ -1876,36 +2049,43 @@ class _Fetch_InputState extends State<Fetch_Input> {
                     ],
                   ),
                   if (_selectedFileSource == 'Local')
-                    Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.indigo),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      padding: EdgeInsets.symmetric(horizontal: 12),
-                      child: DropdownButton<String>(
-                        hint: Text(
-                          'Choose File',
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.black45,
-                          ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo[800],
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        value: _selectedLocalFile,
-                        isExpanded: true,
-                        underline: SizedBox(),
-                        onChanged: (String? newValue) {
+                      ),
+                      onPressed: () async {
+                        // Open the file picker
+                        FilePickerResult? result = await FilePicker.platform.pickFiles(
+                          type: FileType.custom,
+                          allowedExtensions: ['txt', 'kml'], // Only allow .txt and .kml files
+                        );
+
+                        // Check if the user selected a file
+                        if (result != null) {
+                          // Get the full file path and the file name
+                          String filePath = result.files.single.path!;
+                          String fileName = path.basename(filePath); // Extract just the file name
+
                           setState(() {
-                            _selectedLocalFile = newValue;
+                            _selectedLocalFilePath = filePath; // Store the full file path
+                            _selectedLocalFile = fileName; // Store the file name to display in UI
                           });
-                        },
-                        items: localFiles
-                            .map<DropdownMenuItem<String>>((String file) {
-                          return DropdownMenuItem<String>(
-                            value: file,
-                            child: Text(file),
-                          );
-                        }).toList(),
+
+                          // Do not call _loadMarkersFromFile here
+                        }
+                      },
+                      child: Text(
+                        _selectedLocalFile != null
+                            ? _selectedLocalFile! // Show the file name in UI
+                            : "Browse Local Files",
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   const SizedBox(height: 20),
@@ -1918,8 +2098,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           setState(() {
                             _selectedFileSource = value;
                             _selectedLocalFile = null;
-                            _selectedCloudFile =
-                            null; // Reset the other selection
+                            _selectedCloudFile = null; // Reset the other selection
                           });
                         },
                       ),
@@ -1963,8 +2142,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                             _selectedCloudFile = newValue;
                           });
                         },
-                        items: cloudFiles
-                            .map<DropdownMenuItem<String>>((String file) {
+                        items: cloudFiles.map<DropdownMenuItem<String>>((String file) {
                           return DropdownMenuItem<String>(
                             value: file,
                             child: Text(file),
@@ -1988,11 +2166,11 @@ class _Fetch_InputState extends State<Fetch_Input> {
                 if (_selectedLocalFile != null || _selectedCloudFile != null) {
                   Navigator.pop(context);
                   if (_selectedLocalFile != null) {
-                    _loadMarkersFromFile(
-                        _selectedLocalFile!); // Local file logic
+                    // Call _loadMarkersFromFile only here
+                    _loadMarkersFromFile(_selectedLocalFilePath!);
                   } else if (_selectedCloudFile != null) {
-                    _loadMarkersFromCloudFile(
-                        _selectedCloudFile!); // Cloud file logic
+                    // Call _loadMarkersFromCloudFile only here
+                    _loadMarkersFromCloudFile(_selectedCloudFile!);
                   }
                 }
               },
@@ -2029,6 +2207,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
+
   Future<void> _loadMarkersFromCloudFile(String fileName) async {
     try {
       final Reference fileRef = FirebaseStorage.instance.ref().child(fileName);
@@ -2079,43 +2258,57 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error loading markers from cloud file: $e');
     }
   }
+
 //Widget to make a button which will trigger the functions SELECTING_PATH_AND_DIRECTION()
-  Future<void> _loadMarkersFromFile(String fileName) async {
-    final contents = await rootBundle.loadString(fileName);
 
-    _markers.clear();
-    _markerPositions.clear();
+  Future<void> _loadMarkersFromFile(String filePath) async {
+    try {
+      // Read the file content from the selected file path
+      final file = File(filePath); // Still using filePath for reading the file
+      final contents = await file.readAsString();
 
-    final lines = contents.split('\n');
-    for (var line in lines) {
-      final parts = line.split(',');
-      if (parts.length >= 2) {
-        final lat = double.parse(parts[0].trim());
-        final lng = double.parse(parts[1].trim());
-        final latLng = LatLng(lat, lng);
+      // Clear existing markers and positions
+      _markers.clear();
+      _markerPositions.clear();
 
-        final markerId = MarkerId('M${_markers.length + 1}');
-        final newMarker = Marker(
-          markerId: markerId,
-          position: latLng,
-          icon:
-          BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-        );
+      // Split the content by lines and parse latitude and longitude
+      final lines = contents.split('\n');
+      for (var line in lines) {
+        final parts = line.split(',');
+        if (parts.length >= 2) {
+          final lat = double.parse(parts[0].trim());
+          final lng = double.parse(parts[1].trim());
+          final latLng = LatLng(lat, lng);
 
-        _markers.add(newMarker);
-        _markerPositions.add(latLng);
+          // Create a new marker
+          final markerId = MarkerId('M${_markers.length + 1}');
+          final newMarker = Marker(
+            markerId: markerId,
+            position: latLng,
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          );
+
+          // Add marker and position to the list
+          _markers.add(newMarker);
+          _markerPositions.add(latLng);
+        }
       }
+
+      // Update UI with new markers
+      setState(() {
+        _updatePolylines(); // Update the polylines based on new markers
+        _updateRouteData(); // Update route data
+        // Show confirm button instead of the Selecting_Path_Direction_and_Turn function
+      });
+
+      // Animate the camera to the first marker
+      animateToFirstMarker();
+    } catch (e) {
+      // Handle file reading/parsing errors
+      print("Error reading file: $e");
     }
-
-    setState(() {
-      _updatePolylines();
-      _updateRouteData();
-      // Selecting_Path_Direction_and_Turn(); //Confirm  button Wdget should be shown and triger only isnted of this funtion ;
-    });
-
-    // Animate the camera to the first marker after loading markers
-    animateToFirstMarker();
   }
+
 // Function to fetch files from Firebase Storag
   Future<List<String>> _fetchCloudFiles() async {
     List<String> fileNames = [];
@@ -2129,6 +2322,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     return fileNames;
   }
+
   Future<List<String>> _getAssetFiles() async {
     // Load the AssetManifest file
     final manifestContent = await rootBundle.loadString('AssetManifest.json');
@@ -2163,7 +2357,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       if (_markerPositions.first == _markerPositions.last) {
         setState(() {
           _isShapeClosed =
-          true; // Set the boolean to true if the shape is closed
+              true; // Set the boolean to true if the shape is closed
         });
       } else {
         setState(() {
@@ -2173,7 +2367,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     } else {
       setState(() {
         _isShapeClosed =
-        false; // If fewer than 2 markers, the shape cannot be closed
+            false; // If fewer than 2 markers, the shape cannot be closed
       });
     }
   }
@@ -2196,7 +2390,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
         toolbarHeight: 160, // Custom height for the AppBar
         flexibleSpace: Padding(
           padding: const EdgeInsets.fromLTRB(
-              10, 50, 10, 0), // Padding to control spacing
+              10, 30, 10, 0), // Padding to control spacing
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -2224,7 +2418,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       decoration: const BoxDecoration(
                         shape: BoxShape.circle,
                         color:
-                        Colors.white, // Set the background color to white
+                            Colors.white, // Set the background color to white
                       ),
                       child: Padding(
                         padding: const EdgeInsets.all(1),
@@ -2276,7 +2470,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                             ),
                             const SizedBox(
                                 width:
-                                2), // Reduced spacing between icon and text
+                                    2), // Reduced spacing between icon and text
 
                             IconButton(
                               icon: const Icon(
@@ -2340,87 +2534,85 @@ class _Fetch_InputState extends State<Fetch_Input> {
                     }),
                   ),
 
-
-                  widget.isManualControl?
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
-                    child: Container(
-                      padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
-                      width: 120,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.indigo[800],
-                        borderRadius:
-                        const BorderRadius.all(Radius.circular(5)),
-                      ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors
-                              .white, // Set the background color to white
-                          borderRadius:
-                          BorderRadius.circular(10), // Rounded corners
-                        ),
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 7),
-                            Center(
-                              child: Text(
-                                "Manual Mode",
-                                style: TextStyle(
-                                  color: Colors.indigo[
-                                  800], // Text color set to indigo
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 14,
-                                  fontFamily:
-                                  GoogleFonts.poppins().fontFamily,
-                                ),
+                  widget.isManualControl
+                      ? Padding(
+                          padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
+                          child: Container(
+                            padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
+                            width: 120,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Colors.indigo[800],
+                              borderRadius:
+                                  const BorderRadius.all(Radius.circular(5)),
+                            ),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors
+                                    .white, // Set the background color to white
+                                borderRadius: BorderRadius.circular(
+                                    10), // Rounded corners
+                              ),
+                              child: Row(
+                                children: [
+                                  const SizedBox(width: 7),
+                                  Center(
+                                    child: Text(
+                                      "Manual Mode",
+                                      style: TextStyle(
+                                        color: Colors.indigo[
+                                            800], // Text color set to indigo
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                        fontFamily:
+                                            GoogleFonts.poppins().fontFamily,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
-                      :
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
-                    child: Container(
-                      padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
-                      width: 140,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.indigo[800],
-                        borderRadius:
-                        const BorderRadius.all(Radius.circular(5)),
-                      ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors
-                              .white, // Set the background color to white
-                          borderRadius:
-                          BorderRadius.circular(10), // Rounded corners
-                        ),
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 7),
-                            Center(
-                              child: Text(
-                                "Autonomous Mode",
-                                style: TextStyle(
-                                  color: Colors.indigo[
-                                  800], // Text color set to indigo
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                  fontFamily:
-                                  GoogleFonts.poppins().fontFamily,
-                                ),
+                          ),
+                        )
+                      : Padding(
+                          padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
+                          child: Container(
+                            padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
+                            width: 140,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Colors.indigo[800],
+                              borderRadius:
+                                  const BorderRadius.all(Radius.circular(5)),
+                            ),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors
+                                    .white, // Set the background color to white
+                                borderRadius: BorderRadius.circular(
+                                    10), // Rounded corners
+                              ),
+                              child: Row(
+                                children: [
+                                  const SizedBox(width: 7),
+                                  Center(
+                                    child: Text(
+                                      "Autonomous Mode",
+                                      style: TextStyle(
+                                        color: Colors.indigo[
+                                            800], // Text color set to indigo
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        fontFamily:
+                                            GoogleFonts.poppins().fontFamily,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
+                          ),
+                        )
                   // Return an empty widget if not purchased
                 ],
               ),
@@ -2585,23 +2777,26 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 Row(
                                   children: [
                                     const Icon(
-                                      Icons.shower_outlined, // replace with your desired icon
+                                      Icons
+                                          .shower_outlined, // replace with your desired icon
                                       color: Colors.black87,
                                       weight: 10,
                                     ),
-                                    SizedBox(width: 5), // space between icon and text
+                                    SizedBox(
+                                        width:
+                                            5), // space between icon and text
                                     Text(
                                       "Rem Spray:",
                                       style: TextStyle(
                                         color: Colors.amber[900],
                                         fontWeight: FontWeight.w600,
                                         fontSize: 14,
-                                        fontFamily: GoogleFonts.poppins().fontFamily,
+                                        fontFamily:
+                                            GoogleFonts.poppins().fontFamily,
                                       ),
                                     ),
                                   ],
                                 ),
-
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: AnimatedOpacity(
@@ -2610,8 +2805,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                     child: LinearPercentIndicator(
                                       lineHeight: 10,
                                       percent:
-                                      _remainingDistanceKM_SelectedPath /
-                                          _totalDistanceKM,
+                                          _remainingDistanceKM_SelectedPath /
+                                              _totalDistanceKM,
                                       linearGradient: const LinearGradient(
                                         colors: [Colors.green, Colors.red],
                                       ),
@@ -2632,22 +2827,25 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 Row(
                                   children: [
                                     const Icon(
-                                      Icons.route_outlined, // replace with your desired icon
+                                      Icons
+                                          .route_outlined, // replace with your desired icon
                                       color: Colors.black87,
                                     ),
-                                    SizedBox(width: 5), // space between icon and text
+                                    SizedBox(
+                                        width:
+                                            5), // space between icon and text
                                     Text(
                                       "Rem Dis:",
                                       style: TextStyle(
                                         color: Colors.indigo[800],
                                         fontWeight: FontWeight.w600,
                                         fontSize: 14,
-                                        fontFamily: GoogleFonts.poppins().fontFamily,
+                                        fontFamily:
+                                            GoogleFonts.poppins().fontFamily,
                                       ),
                                     ),
                                   ],
                                 ),
-
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: AnimatedOpacity(
@@ -2675,22 +2873,25 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 Row(
                                   children: [
                                     const Icon(
-                                      Icons.timer_outlined, // replace with your desired icon
+                                      Icons
+                                          .timer_outlined, // replace with your desired icon
                                       color: Colors.black87,
                                     ),
-                                    SizedBox(width: 5), // space between icon and text
+                                    SizedBox(
+                                        width:
+                                            5), // space between icon and text
                                     Text(
                                       "Rem Time:",
                                       style: TextStyle(
                                         color: Colors.red,
                                         fontWeight: FontWeight.w600,
                                         fontSize: 14,
-                                        fontFamily: GoogleFonts.poppins().fontFamily,
+                                        fontFamily:
+                                            GoogleFonts.poppins().fontFamily,
                                       ),
                                     ),
                                   ],
                                 ),
-
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: AnimatedOpacity(
@@ -2716,132 +2917,130 @@ class _Fetch_InputState extends State<Fetch_Input> {
                   ),
                 ),
 
-
-
               widget.isManualControl
                   ? Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Column(
-                        children: [
-                          GestureDetector(
-                            onTapDown: (TapDownDetails details) {
-                              setState(() {
-                                //start moving
-                              });
-                            },
-                            onTapUp: (TapUpDetails details) {
-                              setState(() {
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Column(
+                              children: [
+                                GestureDetector(
+                                  onTapDown: (TapDownDetails details) {
+                                    setState(() {
+                                      //start moving
+                                    });
+                                  },
+                                  onTapUp: (TapUpDetails details) {
+                                    setState(() {
 //stop moving
-                              });
-                              //_manualMovement(0); // Stop drone when button is released
-                            },
-                            child: Image.asset(
-                              'images/up.png',
-                              width: _isUpPressed ? 45 : 35,
-                              height: _isUpPressed ? 45 : 35,
+                                    });
+                                    //_manualMovement(0); // Stop drone when button is released
+                                  },
+                                  child: Image.asset(
+                                    'images/up.png',
+                                    width: _isUpPressed ? 45 : 35,
+                                    height: _isUpPressed ? 45 : 35,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 5),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      GestureDetector(
-                        onTapDown: (TapDownDetails details) {
-                          setState(() {
-                            //start moving
-                          });
-                        },
-                        onTapUp: (TapUpDetails details) {
-                          setState(() {
-//stop moving
-                          });
-                          //_manualMovement(0); // Stop drone when button is released
-                        },
-                        child: Image.asset(
-                          'images/left.png',
-                          width: _isLeftPressed ? 45 : 35,
-                          height: _isLeftPressed ? 45 : 35,
+                          ],
                         ),
-                      ),
-                      SizedBox(width: 5),
-                      GestureDetector(
-                        onTapDown: (TapDownDetails details) {
-                          setState(() {
-                            //start moving
-                          });
-                        },
-                        onTapUp: (TapUpDetails details) {
-                          setState(() {
+                        SizedBox(height: 5),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            GestureDetector(
+                              onTapDown: (TapDownDetails details) {
+                                setState(() {
+                                  //start moving
+                                });
+                              },
+                              onTapUp: (TapUpDetails details) {
+                                setState(() {
 //stop moving
-                          });
-                          //_manualMovement(0); // Stop drone when button is released
-                        },
-                        child: Image.asset(
-                          'images/stop.png',
-                          width: _isStop ? 45 : 35,
-                          height: _isStop ? 45 : 35,
-                        ),
-                      ),
-                      SizedBox(width: 5),
-                      GestureDetector(
-                        onTapDown: (TapDownDetails details) {
-                          setState(() {
-                            //start moving
-                          });
-                        },
-                        onTapUp: (TapUpDetails details) {
-                          setState(() {
-//stop moving
-                          });
-                          //_manualMovement(0); // Stop drone when button is released
-                        },
-                        child: Image.asset(
-                          'images/right.png',
-                          width: _isRightPressed ? 45 : 35,
-                          height: _isRightPressed ? 45 : 35,
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 5),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Column(
-                        children: [
-                          GestureDetector(
-                            onTapDown: (TapDownDetails details) {
-                              setState(() {
-                                //start moving
-                              });
-                            },
-                            onTapUp: (TapUpDetails details) {
-                              setState(() {
-//stop moving
-                              });
-                              //_manualMovement(0); // Stop drone when button is released
-                            },
-                            child: Image.asset(
-                              'images/down.png',
-                              width: _isDownPressed ? 45 : 35,
-                              height: _isDownPressed ? 45 : 35,
+                                });
+                                //_manualMovement(0); // Stop drone when button is released
+                              },
+                              child: Image.asset(
+                                'images/left.png',
+                                width: _isLeftPressed ? 45 : 35,
+                                height: _isLeftPressed ? 45 : 35,
+                              ),
                             ),
-                          ),
-                          SizedBox(height: 10),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              )
+                            SizedBox(width: 5),
+                            GestureDetector(
+                              onTapDown: (TapDownDetails details) {
+                                setState(() {
+                                  //start moving
+                                });
+                              },
+                              onTapUp: (TapUpDetails details) {
+                                setState(() {
+//stop moving
+                                });
+                                //_manualMovement(0); // Stop drone when button is released
+                              },
+                              child: Image.asset(
+                                'images/stop.png',
+                                width: _isStop ? 45 : 35,
+                                height: _isStop ? 45 : 35,
+                              ),
+                            ),
+                            SizedBox(width: 5),
+                            GestureDetector(
+                              onTapDown: (TapDownDetails details) {
+                                setState(() {
+                                  //start moving
+                                });
+                              },
+                              onTapUp: (TapUpDetails details) {
+                                setState(() {
+//stop moving
+                                });
+                                //_manualMovement(0); // Stop drone when button is released
+                              },
+                              child: Image.asset(
+                                'images/right.png',
+                                width: _isRightPressed ? 45 : 35,
+                                height: _isRightPressed ? 45 : 35,
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 5),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Column(
+                              children: [
+                                GestureDetector(
+                                  onTapDown: (TapDownDetails details) {
+                                    setState(() {
+                                      //start moving
+                                    });
+                                  },
+                                  onTapUp: (TapUpDetails details) {
+                                    setState(() {
+//stop moving
+                                    });
+                                    //_manualMovement(0); // Stop drone when button is released
+                                  },
+                                  child: Image.asset(
+                                    'images/down.png',
+                                    width: _isDownPressed ? 45 : 35,
+                                    height: _isDownPressed ? 45 : 35,
+                                  ),
+                                ),
+                                SizedBox(height: 10),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
+                    )
                   : Container(),
             ]),
             Row(
@@ -2905,13 +3104,23 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       },
                     );
                   },
-                  child: Text(
-                    'Reset Map',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Text(
+                        'Reset Map',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(
+                          width: 9), // Reduced space between icon and text
+                      const Icon(Icons.warning_amber_outlined,
+                          color: Colors.white,
+                          size: 18), // Reduced icon size
+                    ],
                   ),
                 ),
 
@@ -2941,7 +3150,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
                   ),
 
                 // Conditionally show the Start Spray button
-
 
                 IconButton(
                   splashRadius: 5,
@@ -2979,57 +3187,59 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       child: _currentLocation == null
                           ? const Center(child: CircularProgressIndicator())
                           : RepaintBoundary(
-                        key: _googleMapKey, // Attach the key to GoogleMap
-                        child: GoogleMap(
-                          initialCameraPosition: _currentLocation != null
-                              ? CameraPosition(
-                            target: LatLng(
-                              _currentLocation!.latitude!,
-                              _currentLocation!.longitude!,
-                            ),
-                            zoom: 15.0,
-                          )
-                              : const CameraPosition(
-                            target: LatLng(
-                                0, 0), // Default fallback position
-                            zoom: 3.0, // Low zoom for global view
-                          ),
-                          markers: {
-                            ..._markers,
-                            if (_currentPosition != null)
-                              Marker(
-                                markerId: const MarkerId('currentLocation'),
-                                position: _currentPosition,
-                                icon: BitmapDescriptor.defaultMarkerWithHue(
-                                    BitmapDescriptor.hueViolet),
+                              key: _googleMapKey, // Attach the key to GoogleMap
+                              child: GoogleMap(
+                                initialCameraPosition: _currentLocation != null
+                                    ? CameraPosition(
+                                        target: LatLng(
+                                          _currentLocation!.latitude!,
+                                          _currentLocation!.longitude!,
+                                        ),
+                                        zoom: 15.0,
+                                      )
+                                    : const CameraPosition(
+                                        target: LatLng(
+                                            0, 0), // Default fallback position
+                                        zoom: 3.0, // Low zoom for global view
+                                      ),
+                                markers: {
+                                  ..._markers,
+                                  if (_currentPosition != null)
+                                    Marker(
+                                      markerId:
+                                          const MarkerId('currentLocation'),
+                                      position: _currentPosition,
+                                      icon:
+                                          BitmapDescriptor.defaultMarkerWithHue(
+                                              BitmapDescriptor.hueViolet),
+                                    ),
+                                },
+                                polylines: _polylines,
+                                polygons: polygons,
+                                zoomGesturesEnabled: true,
+                                rotateGesturesEnabled: true,
+                                scrollGesturesEnabled: true,
+                                buildingsEnabled: false,
+                                onTap: _isCustomMode ? _onMapTap : null,
+                                onMapCreated: (controller) {
+                                  _googleMapController = controller;
+                                  // Camera animation is now handled separately.
+                                },
+                                gestureRecognizers: <Factory<
+                                    OneSequenceGestureRecognizer>>{
+                                  Factory<OneSequenceGestureRecognizer>(
+                                      () => EagerGestureRecognizer()),
+                                },
+                                myLocationEnabled: true,
+                                myLocationButtonEnabled: true,
                               ),
-                          },
-                          polylines: _polylines,
-                          polygons: polygons,
-                          zoomGesturesEnabled: true,
-                          rotateGesturesEnabled: true,
-                          scrollGesturesEnabled: true,
-                          buildingsEnabled: false,
-                          onTap: _isCustomMode ? _onMapTap : null,
-                          onMapCreated: (controller) {
-                            _googleMapController = controller;
-                            // Camera animation is now handled separately.
-                          },
-                          gestureRecognizers: <Factory<
-                              OneSequenceGestureRecognizer>>{
-                            Factory<OneSequenceGestureRecognizer>(
-                                    () => EagerGestureRecognizer()),
-                          },
-                          myLocationEnabled: true,
-                          myLocationButtonEnabled: true,
-                        ),
-                      ),
+                            ),
                     ),
                     Padding(
                       padding: const EdgeInsets.all(8.0),
                       child: ClipRRect(
                         borderRadius:
-                        BorderRadius.circular(30.0), // Capsule shape
+                            BorderRadius.circular(30.0), // Capsule shape
                         child: Container(
                           decoration: const BoxDecoration(
                             color: Colors.white,
@@ -3058,9 +3268,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 suffixIcon: IconButton(
                                   icon: const Icon(Icons.search,
                                       color:
-                                      Colors.black), // Customize icon color
+                                          Colors.black), // Customize icon color
                                   onPressed:
-                                  _hideKeyboard, // Hide keyboard on search button press
+                                      _hideKeyboard, // Hide keyboard on search button press
                                 ),
                                 contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16.0, vertical: 12.0),
@@ -3072,29 +3282,29 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               }
                               _debounce?.cancel();
                               final completer =
-                              Completer<List<geocoding.Placemark>>();
+                                  Completer<List<geocoding.Placemark>>();
                               _debounce = Timer(const Duration(microseconds: 1),
-                                      () async {
-                                    List<geocoding.Placemark> placemarks = [];
-                                    try {
-                                      List<geocoding.Location> locations =
+                                  () async {
+                                List<geocoding.Placemark> placemarks = [];
+                                try {
+                                  List<geocoding.Location> locations =
                                       await geocoding
                                           .locationFromAddress(pattern);
-                                      if (locations.isNotEmpty) {
-                                        placemarks = await Future.wait(
-                                          locations.map((location) =>
-                                              geocoding.placemarkFromCoordinates(
-                                                location.latitude,
-                                                location.longitude,
-                                              )),
-                                        ).then((results) =>
-                                            results.expand((x) => x).toList());
-                                      }
-                                    } catch (e) {
-                                      // Handle error if needed
-                                    }
-                                    completer.complete(placemarks);
-                                  });
+                                  if (locations.isNotEmpty) {
+                                    placemarks = await Future.wait(
+                                      locations.map((location) =>
+                                          geocoding.placemarkFromCoordinates(
+                                            location.latitude,
+                                            location.longitude,
+                                          )),
+                                    ).then((results) =>
+                                        results.expand((x) => x).toList());
+                                  }
+                                } catch (e) {
+                                  // Handle error if needed
+                                }
+                                completer.complete(placemarks);
+                              });
                               return completer.future;
                             },
                             itemBuilder:
@@ -3102,16 +3312,16 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               return ListTile(
                                 leading: const Icon(Icons.location_on,
                                     color:
-                                    Colors.green), // Customize icon color
+                                        Colors.green), // Customize icon color
                                 title: Text(
                                   suggestion.name ??
                                       'No Country/City Available',
                                   style: TextStyle(
                                     fontFamily:
-                                    GoogleFonts.poppins().fontFamily,
+                                        GoogleFonts.poppins().fontFamily,
                                     fontSize: 16.0,
                                     fontWeight:
-                                    FontWeight.w400, // Customize font size
+                                        FontWeight.w400, // Customize font size
                                     color: Colors.black, // Customize text color
                                   ),
                                 ),
@@ -3119,11 +3329,11 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                   suggestion.locality ?? 'No locality Exists',
                                   style: TextStyle(
                                     fontFamily:
-                                    GoogleFonts.poppins().fontFamily,
+                                        GoogleFonts.poppins().fontFamily,
 
                                     fontSize: 14.0, // Customize font size
                                     color:
-                                    Colors.black54, // Customize text color
+                                        Colors.black54, // Customize text color
                                   ),
                                 ),
                               );
@@ -3134,8 +3344,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                   '${suggestion.name ?? ''}, ${suggestion.locality ?? ''}';
                               try {
                                 List<geocoding.Location> locations =
-                                await geocoding
-                                    .locationFromAddress(address);
+                                    await geocoding
+                                        .locationFromAddress(address);
                                 if (locations.isNotEmpty) {
                                   final location = locations.first;
 
@@ -3167,10 +3377,12 @@ class _Fetch_InputState extends State<Fetch_Input> {
       ),
     );
   }
+
   Future<void> captureBottomHalfGoogleMap() async {
     try {
       // Capture the widget as an image
-      RenderRepaintBoundary boundary = _googleMapKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      RenderRepaintBoundary boundary = _googleMapKey.currentContext!
+          .findRenderObject() as RenderRepaintBoundary;
       ui.Image capturedImage = await boundary.toImage();
 
       // Get image dimensions
@@ -3178,7 +3390,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
       final int imageHeight = capturedImage.height;
 
       // Convert the image to byte data and extract only the bottom half
-      final ByteData? byteData = await capturedImage.toByteData(format: ui.ImageByteFormat.png);
+      final ByteData? byteData =
+          await capturedImage.toByteData(format: ui.ImageByteFormat.png);
 
       if (byteData != null) {
         final Uint8List pngBytes = byteData.buffer.asUint8List();
@@ -3202,9 +3415,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
       // Crop the bottom half of the image
       final img.Image croppedImage = img.copyCrop(
         originalImage,
-        x: 0,             // x-coordinate (left)
-        y: height ~/ 2,   // y-coordinate (start from the middle)
-        width: width,     // width of the cropped image (same as original)
+        x: 0, // x-coordinate (left)
+        y: height ~/ 2, // y-coordinate (start from the middle)
+        width: width, // width of the cropped image (same as original)
         height: height ~/ 2, // height of the cropped image (bottom half)
       );
 
@@ -3263,9 +3476,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
     final newMarker = Marker(
       markerId: markerId,
       position: latLng,
-      icon: BitmapDescriptor.defaultMarkerWithHue(
-          _selectedMarkerId == markerId ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueAzure
-      ),
+      icon: BitmapDescriptor.defaultMarkerWithHue(_selectedMarkerId == markerId
+          ? BitmapDescriptor.hueGreen
+          : BitmapDescriptor.hueAzure),
       onTap: () {
         if (_markers.length > 2 && latLng == _markers.first.position) {
           Selecting_Path_Direction_and_Turn();
@@ -3282,7 +3495,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     });
   }
-
 
 //area calculation of field
   double _calculateSphericalPolygonArea(List<LatLng> points) {

@@ -494,7 +494,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                     'images/temp.png', // Path to your custom icon
                                 label: 'Temperature',
                                 value:
-                                    '${weatherController.weather.value.temp.toStringAsFixed(1)} °C',
+                                    '${weatherController.weather.value.temp.toStringAsFixed(1)} C',
                                 cardColor: Colors.purple,
                                 textColor: Colors.white,
                                 iconColor:

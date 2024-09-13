@@ -723,8 +723,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
   }
 
 // Check if the current segment is part of the selected route
-  bool _isSegmentSelected(List<LatLng> path,
-      List<List<LatLng>> selectedSegments, int index, PathDirection direction) {
+  bool _isSegmentSelected(List<LatLng> path,List<List<LatLng>> selectedSegments, int index, PathDirection direction) {
     if (index < path.length - 1) {
       LatLng start = path[index];
       LatLng end = path[index + 1];
@@ -1508,8 +1507,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     );
   }
 
-  void _updatePolylineColors(List<int> selectedSegments,
-      {bool isVertical = false}) {
+  void _updatePolylineColors(List<int> selectedSegments, {bool isVertical = false}) {
     setState(() {
       // Update horizontal paths
       if (!isVertical) {
@@ -1588,8 +1586,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     );
   }
 
-  void dronepath_Horizontal(
-      List<LatLng> polygon, double pathWidth, LatLng startPoint) {
+  void dronepath_Horizontal(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
 
     List<LatLng> sortedByLat = List.from(polygon)
@@ -1681,8 +1678,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     });
   }
 
-  void dronepath_Vertical(
-      List<LatLng> polygon, double pathWidth, LatLng startPoint) {
+  void dronepath_Vertical(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
 
     List<LatLng> sortedByLng = List.from(polygon)
@@ -2208,11 +2204,15 @@ class _Fetch_InputState extends State<Fetch_Input> {
     );
   }
 
+
+
+
+
+
   Future<void> _loadMarkersFromCloudFile(String fileName) async {
     try {
       final Reference fileRef = FirebaseStorage.instance.ref().child(fileName);
       final String downloadUrl = await fileRef.getDownloadURL();
-
       final response = await http.get(Uri.parse(downloadUrl));
 
       if (response.statusCode == 200) {
@@ -2221,36 +2221,47 @@ class _Fetch_InputState extends State<Fetch_Input> {
         _markers.clear();
         _markerPositions.clear();
 
-        final lines = contents.split('\n');
-        for (var line in lines) {
-          final parts = line.split(',');
-          if (parts.length >= 2) {
-            final lat = double.parse(parts[0].trim());
-            final lng = double.parse(parts[1].trim());
-            final latLng = LatLng(lat, lng);
+        // Use regex to extract content inside <coordinates> tags
+        final RegExp coordRegExp = RegExp(r'<coordinates>(.*?)<\/coordinates>', dotAll: true);
+        final Iterable<RegExpMatch> matches = coordRegExp.allMatches(contents);
 
-            final markerId = MarkerId('M${_markers.length + 1}');
-            final newMarker = Marker(
-              markerId: markerId,
-              position: latLng,
-              icon: BitmapDescriptor.defaultMarkerWithHue(
-                  BitmapDescriptor.hueAzure),
-            );
+        // Loop through each match and process the coordinates
+        for (var match in matches) {
+          final String coordinateData = match.group(1)!.trim();
 
-            _markers.add(newMarker);
-            _markerPositions.add(latLng);
+          // Split by spaces or new lines to get individual pairs
+          final coordinatePairs = coordinateData.split(RegExp(r'\s+'));
+
+          for (var pair in coordinatePairs) {
+            final parts = pair.split(',');
+            if (parts.length >= 2) {
+              final lng = double.parse(parts[0].trim()); // Longitude is the first value
+              final lat = double.parse(parts[1].trim()); // Latitude is the second value
+
+              // Swap the order to match LatLng (lat, lng) format
+              final latLng = LatLng(lat, lng);
+
+              // Create a new marker
+              final markerId = MarkerId('M${_markers.length + 1}');
+              final newMarker = Marker(
+                markerId: markerId,
+                position: latLng,
+                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+              );
+
+              // Add marker and position to the list
+              _markers.add(newMarker);
+              _markerPositions.add(latLng);
+            }
           }
         }
 
+        // Update the UI with the new markers and polylines
         setState(() {
           _updatePolylines();
           _updateRouteData();
           animateToFirstMarker();
-
-//          Selecting_Path_Direction_and_Turn(); //Confirm  button Wdget should be shown and triger only isnted of this funtion ;
         });
-
-        // Animate the camera to the first marker after loading markers
       } else {
         print('Error fetching cloud file: ${response.statusCode}');
       }
@@ -2264,50 +2275,69 @@ class _Fetch_InputState extends State<Fetch_Input> {
   Future<void> _loadMarkersFromFile(String filePath) async {
     try {
       // Read the file content from the selected file path
-      final file = File(filePath); // Still using filePath for reading the file
+      final file = File(filePath);
       final contents = await file.readAsString();
 
       // Clear existing markers and positions
       _markers.clear();
       _markerPositions.clear();
 
-      // Split the content by lines and parse latitude and longitude
-      final lines = contents.split('\n');
-      for (var line in lines) {
-        final parts = line.split(',');
-        if (parts.length >= 2) {
-          final lat = double.parse(parts[0].trim());
-          final lng = double.parse(parts[1].trim());
-          final latLng = LatLng(lat, lng);
+      // Use regex to extract content inside <coordinates> tags
+      final RegExp coordRegExp = RegExp(r'<coordinates>(.*?)<\/coordinates>', dotAll: true);
+      final Iterable<RegExpMatch> matches = coordRegExp.allMatches(contents);
 
-          // Create a new marker
-          final markerId = MarkerId('M${_markers.length + 1}');
-          final newMarker = Marker(
-            markerId: markerId,
-            position: latLng,
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-          );
+      // Loop through each match and process the coordinates
+      for (var match in matches) {
+        final String coordinateData = match.group(1)!.trim();
 
-          // Add marker and position to the list
-          _markers.add(newMarker);
-          _markerPositions.add(latLng);
+        // Split by spaces or new lines to get individual pairs
+        final coordinatePairs = coordinateData.split(RegExp(r'\s+'));
+
+        for (var pair in coordinatePairs) {
+          final parts = pair.split(',');
+          if (parts.length >= 2) {
+            final lng = double.parse(parts[0].trim()); // Longitude is the first value
+            final lat = double.parse(parts[1].trim()); // Latitude is the second value
+
+            // Swap the order to match LatLng (lat, lng) format
+            final latLng = LatLng(lat, lng);
+
+            // Create a new marker
+            final markerId = MarkerId('M${_markers.length + 1}');
+            final newMarker = Marker(
+              markerId: markerId,
+              position: latLng,
+              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+            );
+
+            // Add marker and position to the list
+            _markers.add(newMarker);
+            _markerPositions.add(latLng);
+          }
         }
       }
 
-      // Update UI with new markers
+      // Update the UI with the new markers and polylines
       setState(() {
-        _updatePolylines(); // Update the polylines based on new markers
-        _updateRouteData(); // Update route data
-        // Show confirm button instead of the Selecting_Path_Direction_and_Turn function
+        _updatePolylines();
+        _updateRouteData();
+        animateToFirstMarker();
       });
-
-      // Animate the camera to the first marker
-      animateToFirstMarker();
     } catch (e) {
-      // Handle file reading/parsing errors
       print("Error reading file: $e");
     }
   }
+
+
+
+
+
+
+
+
+
+
+
 
 // Function to fetch files from Firebase Storag
   Future<List<String>> _fetchCloudFiles() async {
@@ -2323,21 +2353,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     return fileNames;
   }
 
-  Future<List<String>> _getAssetFiles() async {
-    // Load the AssetManifest file
-    final manifestContent = await rootBundle.loadString('AssetManifest.json');
-
-    // Decode the JSON into a Map<String, dynamic>
-    final Map<String, dynamic> manifestMap = json.decode(manifestContent);
-
-    // Filter the manifest for .txt files in the 'images/' directory
-    final txtFiles = manifestMap.keys
-        .where(
-            (String key) => key.startsWith('images/') && key.endsWith('.kml'))
-        .toList();
-
-    return txtFiles;
-  }
 
   void _updatePolylines() {
     _polylines.clear();

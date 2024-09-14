@@ -2189,23 +2189,26 @@ class _Fetch_InputState extends State<Fetch_Input> {
         final RegExp coordRegExp = RegExp(r'<coordinates>(.*?)<\/coordinates>', dotAll: true);
         final Iterable<RegExpMatch> matches = coordRegExp.allMatches(contents);
 
-        // Loop through each match and process the coordinates
+        bool restrictedAreaFound = false; // Flag for restricted area
+
         for (var match in matches) {
           final String coordinateData = match.group(1)!.trim();
-
-          // Split by spaces or new lines to get individual pairs
           final coordinatePairs = coordinateData.split(RegExp(r'\s+'));
 
           for (var pair in coordinatePairs) {
             final parts = pair.split(',');
             if (parts.length >= 2) {
-              final lng = double.parse(parts[0].trim()); // Longitude is the first value
-              final lat = double.parse(parts[1].trim()); // Latitude is the second value
-
-              // Swap the order to match LatLng (lat, lng) format
+              final lng = double.parse(parts[0].trim());
+              final lat = double.parse(parts[1].trim());
               final latLng = LatLng(lat, lng);
 
-              // Create a new marker
+              // Check if the LatLng falls in a restricted building area
+              if (_isLatLngInRestrictedArea(latLng)) {
+                restrictedAreaFound = true;
+                break;
+              }
+
+              // Create marker only if not in restricted area
               final markerId = MarkerId('M${_markers.length + 1}');
               final newMarker = Marker(
                 markerId: markerId,
@@ -2213,19 +2216,24 @@ class _Fetch_InputState extends State<Fetch_Input> {
                 icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
               );
 
-              // Add marker and position to the list
               _markers.add(newMarker);
               _markerPositions.add(latLng);
             }
           }
+
+          if (restrictedAreaFound) break;
         }
 
-        // Update the UI with the new markers and polylines
-        setState(() {
-          _updatePolylines();
-          _updateRouteData();
-          animateToFirstMarker();
-        });
+        if (restrictedAreaFound) {
+          _showRestrictedAreaSnackbar(context, 'KML file Have restricted markers on building areas,PLease choose another File'); // Show snackbar if restricted area is found
+        } else {
+          // Update the UI if no restricted area was found
+          setState(() {
+            _updatePolylines();
+            _updateRouteData();
+            animateToFirstMarker();
+          });
+        }
       } else {
         print('Error fetching cloud file: ${response.statusCode}');
       }
@@ -2236,35 +2244,35 @@ class _Fetch_InputState extends State<Fetch_Input> {
 //Widget to make a button which will trigger the functions SELECTING_PATH_AND_DIRECTION()
   Future<void> _loadMarkersFromFile(String filePath) async {
     try {
-      // Read the file content from the selected file path
       final file = File(filePath);
       final contents = await file.readAsString();
 
-      // Clear existing markers and positions
       _markers.clear();
       _markerPositions.clear();
 
-      // Use regex to extract content inside <coordinates> tags
       final RegExp coordRegExp = RegExp(r'<coordinates>(.*?)<\/coordinates>', dotAll: true);
       final Iterable<RegExpMatch> matches = coordRegExp.allMatches(contents);
 
-      // Loop through each match and process the coordinates
+      bool restrictedAreaFound = false; // Flag for restricted area
+
       for (var match in matches) {
         final String coordinateData = match.group(1)!.trim();
-
-        // Split by spaces or new lines to get individual pairs
         final coordinatePairs = coordinateData.split(RegExp(r'\s+'));
 
         for (var pair in coordinatePairs) {
           final parts = pair.split(',');
           if (parts.length >= 2) {
-            final lng = double.parse(parts[0].trim()); // Longitude is the first value
-            final lat = double.parse(parts[1].trim()); // Latitude is the second value
-
-            // Swap the order to match LatLng (lat, lng) format
+            final lng = double.parse(parts[0].trim());
+            final lat = double.parse(parts[1].trim());
             final latLng = LatLng(lat, lng);
 
-            // Create a new marker
+            // Check if the LatLng falls in a restricted building area
+            if (_isLatLngInRestrictedArea(latLng)) {
+              restrictedAreaFound = true;
+              break;
+            }
+
+            // Create marker only if not in restricted area
             final markerId = MarkerId('M${_markers.length + 1}');
             final newMarker = Marker(
               markerId: markerId,
@@ -2272,23 +2280,39 @@ class _Fetch_InputState extends State<Fetch_Input> {
               icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
             );
 
-            // Add marker and position to the list
             _markers.add(newMarker);
             _markerPositions.add(latLng);
           }
         }
+
+        if (restrictedAreaFound) break;
       }
 
-      // Update the UI with the new markers and polylines
-      setState(() {
-        _updatePolylines();
-        _updateRouteData();
-        animateToFirstMarker();
-      });
+      if (restrictedAreaFound) {
+        _showRestrictedAreaSnackbar(context, 'KML file Have restricted markers on building areas,PLease choose another File'); // Show snackbar if restricted area is found
+      } else {
+        // Update the UI if no restricted area was found
+        setState(() {
+          _updatePolylines();
+          _updateRouteData();
+          animateToFirstMarker();
+        });
+      }
     } catch (e) {
       print("Error reading file: $e");
     }
   }
+  bool _isLatLngInRestrictedArea(LatLng point) {
+    for (var polygon in _buildingPolygons) {
+      if (_isPointInPolygon(point, polygon.points)) {
+        return true; // Point is in restricted area
+      }
+    }
+    return false;
+  }
+
+
+
 // Function to fetch files from Firebase Storage
   Future<List<String>> _fetchCloudFiles() async {
     List<String> fileNames = [];
@@ -3465,7 +3489,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
   void _onMapTap(LatLng latLng) async {
     // Check if the tapped location intersects with any building polygon
     bool isOnBuilding = _buildingPolygons.any((polygon) =>
-        polygon.points.any((point) => _isPointInPolygon(latLng, polygon)));
+        _isPointInPolygon(latLng, polygon.points));
 
     if (isOnBuilding) {
       // Show snackbar indicating that the marker can't be placed on buildings or residential areas
@@ -3491,6 +3515,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
     setState(() {
       _markers.add(newMarker);
       _markerPositions.add(latLng);
+
+      // Update polylines and route data if more than one marker is present
       if (_markers.length > 1) {
         _updatePolylines();
         _updateRouteData();
@@ -3498,28 +3524,30 @@ class _Fetch_InputState extends State<Fetch_Input> {
     });
   }
 
+
 // Helper function to check if a point is inside a polygon
-  bool _isPointInPolygon(LatLng point, Polygon polygon) {
-    final List<LatLng> points = polygon.points;
+  bool _isPointInPolygon(LatLng point, List<LatLng> points) {
     int j = points.length - 1;
     bool inside = false;
 
     for (int i = 0; i < points.length; i++) {
-      if (points[i].longitude < point.longitude && points[j].longitude >= point.longitude ||
-          points[j].longitude < point.longitude && points[i].longitude >= point.longitude) {
-        if (points[i].latitude + (point.longitude - points[i].longitude) / (points[j].longitude - points[i].longitude) *
+      if ((points[i].longitude < point.longitude && points[j].longitude >= point.longitude) ||
+          (points[j].longitude < point.longitude && points[i].longitude >= point.longitude)) {
+        if (points[i].latitude + (point.longitude - points[i].longitude) /
+            (points[j].longitude - points[i].longitude) *
             (points[j].latitude - points[i].latitude) < point.latitude) {
           inside = !inside;
         }
       }
       j = i;
     }
-
     return inside;
   }
+
   Future<void> _checkCityAndFetchData() async {
     // Get the city name from the weatherController (you may need to adapt this part depending on your architecture)
-    String cityName = weatherController.weather.value.cityname;
+   // String cityName = weatherController.weather.value.cityname;
+    String cityName = 'rawalpindi';
 
     if (cityName.isEmpty) {
       print("City name is still loading...");
@@ -3552,7 +3580,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
         break;
     }
   }
-
   Future<void> _fetchBuildingData(String url) async {
     final response = await http.get(Uri.parse(url));
 
@@ -3567,7 +3594,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       throw Exception('Failed to fetch building data');
     }
   }
-
   void _processBuildingData(Map<String, dynamic> data) {
     List<Polygon> polygons = [];
 
@@ -3593,7 +3619,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       _buildingPolygons = polygons.toSet(); // Ensure you use Set<Polygon>
     });
   }
-
   List<LatLng> _createCirclePoints(LatLng center, double radius, int pointsCount) {
     List<LatLng> circlePoints = [];
     const double degreeToRadians = pi / 180.0;
@@ -3611,21 +3636,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     return circlePoints;
   }
-
-
-
-// Helper function to create zone points around a building node
-  List<LatLng> _createBuildingZonePoints(LatLng center) {
-    const double offset = 0.09; // Adjust this value to increase or decrease the zone size
-    return [
-      LatLng(center.latitude + offset, center.longitude + offset),
-      LatLng(center.latitude + offset, center.longitude - offset),
-      LatLng(center.latitude - offset, center.longitude - offset),
-      LatLng(center.latitude - offset, center.longitude + offset),
-    ];
-  }
-
-
 //area calculation of field
   double _calculateSphericalPolygonArea(List<LatLng> points) {
     const double radiusOfEarth = 6378137.0; // Earth's radius in meters
@@ -3810,8 +3820,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     return areaInAcres;
   }*/
 }
-
-
 void _showSnackbar(BuildContext context, String message) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
@@ -3838,7 +3846,30 @@ void _showSnackbar(BuildContext context, String message) {
 }
 
 
-
+void _showRestrictedAreaSnackbar(BuildContext context, String message) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(
+        message,
+        style: TextStyle(
+          fontFamily: GoogleFonts.poppins().fontFamily,
+          fontSize: 16,
+          color: Colors.white,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      backgroundColor: Colors.red.withOpacity(0.8),
+      duration: const Duration(seconds: 7),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(
+          Radius.circular(10),
+        ),
+      ),
+      behavior: SnackBarBehavior.floating,
+      margin: EdgeInsets.all(8),
+    ),
+  );
+}
 class _CardItem extends StatelessWidget {
   final String title;
   final String value;

@@ -4,42 +4,41 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 import 'package:file_picker/file_picker.dart';
+import 'package:geocoding/geocoding.dart' as geocoding; // Prefixed geocoding
+import 'package:geocoding/geocoding.dart';
 import 'package:image/image.dart' as img;
 import 'dart:typed_data';
-import 'dart:ui' as ui; // Make sure to prefix dart:ui imports with 'ui'
+import 'dart:ui' as ui;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
-import 'package:get/get_core/src/get_main.dart';
-import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:location/location.dart';
 import 'package:path/path.dart' as path;
 import 'package:flutter/services.dart';
 import 'package:percent_indicator/linear_percent_indicator.dart';
 import 'package:project_drone/Screens/homescreen.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:location/location.dart';
+import 'package:location/location.dart' as gps; // Prefixed location
 import 'package:provider/provider.dart';
 import 'package:screenshot/screenshot.dart';
 import '../Constant/ISSAASProvider.dart';
 import '../Constant/controller_weather.dart';
 import '../shared_state.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
-import 'package:geocoding/geocoding.dart' as geocoding;
 import 'package:latlong2/latlong.dart' as latlong;
 import 'package:http/http.dart' as http;
-
 import 'LoginScreen.dart';
+
 
 enum PathDirection { horizontal, vertical }
 
@@ -66,13 +65,14 @@ class _Fetch_InputState extends State<Fetch_Input> {
   // Stop = 0
   late BitmapDescriptor ugv_active;
   late BitmapDescriptor ugv_dead;
-  List<List<LatLng>> _allPaths = []; // Initialize _allPaths here
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showInputSelectionPopup();
     });
+    _checkCityAndFetchData();
+
     _requestLocationPermission();
     _initializeFirebaseListener();
     if (_markers.isNotEmpty) {
@@ -80,6 +80,10 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     _carPosition = LatLng(0, 0); // Initialize with a default value
     _loadCarIcons();
+
+
+
+
   }
 
   void dispose() {
@@ -87,7 +91,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     _movementTimer?.cancel(); // Add this line
     super.dispose();
   }
-
+//DEFAULT and Variables
   LatLng _currentPosition = LatLng(0, 0); // Default position
   late DatabaseReference _latRef;
   late DatabaseReference _longRef;
@@ -99,26 +103,38 @@ class _Fetch_InputState extends State<Fetch_Input> {
   double distanceTraveled = 0.0;
   double totalZigzagPathKm = 0.0;
   double TLM = 0.0;
+
+
+
+  //BOOL VARIABLE FOR COUSTOM MODES
   bool _isFullScreen = false;
   bool _isUpPressed = false;
   bool _isStop = false;
   bool _isLeftPressed = false;
   bool _isRightPressed = false;
   bool _isDownPressed = false;
-  final List<List<LatLng>> _selectedPathsQueue = [];
-  late List<List<LatLng>> selectedSegments;
-  final Location _location = Location();
-  LocationData? _currentLocation;
   bool _isMoving = false;
   bool _isConfirmed = false;
   bool _ismanual = false;
+
+
   late LatLng _carPosition;
   int _currentPointIndex = 0;
+  final gps.Location _location = gps.Location(); // Use the prefixed `gps.Location`
+  LocationData? _currentLocation;
+
+  //POLYGONS and LIST
+  Set<Polygon> _buildingPolygons = {};
+  final List<List<LatLng>> _selectedPathsQueue = [];
+  List<List<LatLng>> _allPaths = []; // Initialize _allPaths here
+  late List<List<LatLng>> selectedSegments;
   late List<Marker> _markers = [];
   final List<LatLng> _markerPositions = [];
   Set<Polyline> _polylines = {};
   Set<Polygon> polygons = {};
   List<LatLng> _dronepath = [];
+
+
   double pathWidth = 10.0;
   bool _isHorizontalDirection = false;
   late LatLng? selectedMarker =
@@ -133,7 +149,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
   List<LatLng> polygonPoints = [];
   final WeatherController weatherController = Get.put(WeatherController());
   MarkerId? _selectedMarkerId; // Add this to track the selected marker
-  Set<String> _selectedPathIds = {};
 
   //USER SELECTION RECEIPT
   String? _selectedLocalFilePath;
@@ -145,23 +160,10 @@ class _Fetch_InputState extends State<Fetch_Input> {
   String? _selectedCloudFile =
       'N/A in Manual Mode'; // To store the selected cloud file
   double _turnLength = 5.0; // To store turn length
-  LatLng? _selectedStartingPoint; // To store the selected starting point
+  LatLng? _selectedStartingPoint;
 
-  void _updateValueInDatabase(int value) async {
-    try {
-      await _databaseReference.child('Direction').set(value);
-    } catch (e) {
-      print('Error updating value in database: $e');
-    }
-  }
+  String get message => 'Cannot place marker on buildings. Please select a plain area'; // To store the selected starting point
 
-  void _updateValueInDatabaseOnRelease() async {
-    try {
-      await _databaseReference.child('Direction').set(0);
-    } catch (e) {
-      print('Error updating value in database: $e');
-    }
-  }
 
   void _resetMarkers() async {
     setState(() {
@@ -2692,75 +2694,153 @@ class _Fetch_InputState extends State<Fetch_Input> {
                             // Rem Spray label and progress bar
                             Row(
                               children: [
-                                Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.shower_outlined, // replace with your desired icon
-                                      color: Colors.black87,
-                                      weight: 10,
-                                    ),
-                                    const SizedBox(width: 5), // space between icon and text
-                                    Text(
-                                      "Rem Spray:",
-                                      style: TextStyle(
-                                        color: Colors.amber[900],
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 14,
-                                        fontFamily: GoogleFonts.poppins().fontFamily,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(width: 10),
-
+                                // First row
                                 Expanded(
-                                  child: Stack(
-                                    alignment: Alignment.bottomLeft,
+                                  child: Row(
                                     children: [
-                                      // The bottle image
-                                      Image.asset(
-                                        'images/spray.png', // Your sprayer image asset path
-                                        height: 100, // Adjust size as needed
-                                        width: 70, // Adjust size as needed
-                                        fit: BoxFit.contain,
-                                      ),
-                                      // Remaining spray represented by a container
-                                      Positioned(
-                                        bottom: 16.1, // Align with the bottom of the bottle body
-                                        left: 3.5, // Adjust left offset if necessary
-
-                                        // Wrap the FractionallySizedBox inside a SizedBox with a fixed height
-                                        child: SizedBox(
-                                          height: 42, // Adjust to fit the height of the bottle body
-                                          child: FractionallySizedBox(
-                                            alignment: Alignment.bottomLeft,
-                                            heightFactor: (_totalDistanceKM != 0)
-                                                ? _remainingDistanceKM_SelectedPath / _totalDistanceKM
-                                                : 0.0, // Proportional height
-                                            child: Container(
-                                              width: 20, // Width matching the image or as needed
-                                              decoration: BoxDecoration(
-                                                gradient: const LinearGradient(
-                                                  colors: [Colors.red, Colors.greenAccent],
-                                                  begin: Alignment.bottomCenter,
-                                                  end: Alignment.topCenter,
-                                                ),
-                                                borderRadius: BorderRadius.circular(7), // Rounded edges for the liquid
-                                              ),
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                            Icons.shower_outlined, // replace with your desired icon
+                                            color: Colors.black87,
+                                            weight: 10,
+                                          ),
+                                          const SizedBox(width: 5), // space between icon and text
+                                          Text(
+                                            "Rem Spray:",
+                                            style: TextStyle(
+                                              color: Colors.amber[900],
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 14,
+                                              fontFamily: GoogleFonts.poppins().fontFamily,
                                             ),
                                           ),
+                                        ],
+                                      ),
+                                      const SizedBox(width: 5),
+
+                                      Expanded(
+                                        child: Stack(
+                                          alignment: Alignment.bottomLeft,
+                                          children: [
+                                            // The bottle image
+                                            Image.asset(
+                                              'images/spray.png', // Your sprayer image asset path
+                                              height: 100, // Adjust size as needed
+                                              width: 70, // Adjust size as needed
+                                              fit: BoxFit.contain,
+                                            ),
+                                            // Remaining spray represented by a container
+                                            Positioned(
+                                              bottom: 16.3, // Align with the bottom of the bottle body
+                                              left: 3.5, // Adjust left offset if necessary
+
+                                              // Wrap the FractionallySizedBox inside a SizedBox with a fixed height
+                                              child: SizedBox(
+                                                height: 42, // Adjust to fit the height of the bottle body
+                                                child: FractionallySizedBox(
+                                                  alignment: Alignment.bottomLeft,
+                                                  heightFactor: (_totalDistanceKM != 0)
+                                                      ? _remainingDistanceKM_SelectedPath / _totalDistanceKM
+                                                      : 0.0, // Proportional height
+                                                  child: Container(
+                                                    width: 20, // Width matching the image or as needed
+                                                    decoration: BoxDecoration(
+                                                      gradient: const LinearGradient(
+                                                        colors: [Colors.red, Colors.green],
+                                                        begin: Alignment.bottomCenter,
+                                                        end: Alignment.topCenter,
+                                                      ),
+                                                      borderRadius: BorderRadius.circular(6), // Rounded edges for the liquid
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ],
                                   ),
                                 ),
+                                const SizedBox(width: 2), // spacing between rows
+
+                                // Second row
+                                Expanded(
+                                  child: Row(
+                                    children: [
+                                      // Watch Icon with Circular Progress Indicator
+                                      const Icon(
+                                        Icons.timer_outlined, // replace with your desired icon
+                                        color: Colors.black87,
+                                        weight: 10,
+                                      ),
+                                      const SizedBox(width: 5), // space between icon and text
+
+                                      // "Rem Time" Text
+                                      Text(
+                                        "Rem Time:",
+                                        style: TextStyle(
+                                          color: Colors.red,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                          fontFamily: GoogleFonts.poppins().fontFamily,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 0), // Spacing between icon and text
+
+                                      SizedBox(
+                                        width: 60, // Adjust width as needed
+                                        height: 60, // Adjust height as needed
+                                        child: Stack(
+                                          alignment: Alignment.center,
+                                          children: [
+                                            // Watch icon image
+                                            Image.asset(
+                                              'images/watch.png', // Your sprayer image asset path
+                                              height: 100, // Adjust size as needed
+                                              width: 70, // Adjust size as needed
+                                              fit: BoxFit.contain,
+                                            ),
+
+                                            // Filled circle (inside the CircularProgressIndicator)
+                                            Positioned(
+                                              bottom: 18.5, // Align with the bottom of the watch body
+                                              left: 25.3, // Adjust left offset if necessary
+                                              child: SizedBox(
+                                                width: 10, // Adjust size as needed
+                                                height: 10,
+                                                child: Stack(
+                                                  alignment: Alignment.center,
+                                                  children: [
+                                                    // Filled background circle
+
+                                                    // Circular progress indicator (on top of the filled circle)
+                                                    CircularProgressIndicator(
+                                                      value: (TLM != null && timeduration != null && timeduration != 0)
+                                                          ? 1 - (TLM / timeduration) // Progress value based on remaining time, progressing clockwise
+                                                          : 0.0, // No progress initially
+                                                      strokeWidth: 31, // Adjust the stroke width for the progress bar
+                                                      valueColor: const AlwaysStoppedAnimation<Color>(Colors.red), // Red progress color for the stroke
+                                                      backgroundColor: Colors.green, // Set background to transparent
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
 
 
+
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ],
                             ),
 
-
-                            // Rem Dis label and progress bar
+                  // Rem Dis label and progress bar
                             Row(
                               children: [
                                 Row(
@@ -2781,7 +2861,11 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                     ),
                                   ],
                                 ),
-                                const SizedBox(width: 10),
+
+
+                      const SizedBox(width: 10),
+
+
                                 Expanded(
                                   child: AnimatedOpacity(
                                     duration: const Duration(seconds: 1),
@@ -2797,7 +2881,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                             ? _remainingDistanceKM_TotalPath / totalZigzagPathKm
                                             : 0.0, // default to 0 if values are invalid
                                         linearGradient: const LinearGradient(
-                                          colors: [Colors.red, Colors.greenAccent], // White internal color and green accent
+                                          colors: [Colors.red, Colors.green], // White
                                         ),
                                         backgroundColor: Colors.grey[200],
                                         barRadius: const Radius.circular(10),
@@ -2806,65 +2890,11 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                     ),
                                   ),
                                 ),
-
-
                               ],
                             ),
-
-                            const SizedBox(height: 8),
 
                             // Rem Time label and progress bar
-                            Row(
-                              children: [
-                                Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.timer_outlined, // replace with your desired icon
-                                      color: Colors.black87,
-                                    ),
-                                    const SizedBox(width: 5), // space between icon and text
-                                    Text(
-                                      "Rem Time:",
-                                      style: TextStyle(
-                                        color: Colors.red,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 14,
-                                        fontFamily: GoogleFonts.poppins().fontFamily,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: AnimatedOpacity(
-                                    duration: const Duration(seconds: 1),
-                                    opacity: 1,
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        border: Border.all(color: Colors.black, width: 1.3), // Black border
-                                        borderRadius: const BorderRadius.all(Radius.circular(10)),
-                                      ),
-                                      child: LinearPercentIndicator(
-                                        lineHeight: 10,
-                                        percent: (TLM != null && timeduration != null && timeduration != 0)
-                                            ? TLM / timeduration
-                                            : 0.0, // default to 0 if values are invalid
-                                        linearGradient: const LinearGradient(
-                                          colors: [Colors.red, Colors.greenAccent], // White internal color with green accent
-                                        ),
-                                        backgroundColor: Colors.grey[200],
-                                        barRadius: const Radius.circular(10),
-                                        padding: EdgeInsets.zero, // Remove extra padding
-                                      ),
-                                    ),
-                                  ),
-                                ),
 
-
-
-
-                              ],
-                            ),
                           ],
                         ),
 
@@ -3174,25 +3204,28 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                     ),
                                 },
                                 polylines: _polylines,
-                                polygons: polygons,
+                                polygons: _buildingPolygons,
                                 zoomGesturesEnabled: true,
                                 rotateGesturesEnabled: true,
                                 scrollGesturesEnabled: true,
                                 buildingsEnabled: false,
                                 onTap: _isCustomMode ? _onMapTap : null,
+                                myLocationEnabled: true,
+                                myLocationButtonEnabled: false,
                                 onMapCreated: (controller) {
                                   _googleMapController = controller;
                                   // Camera animation is now handled separately.
+                                  _checkCityAndFetchData(); // Fetch and display building data on map creation
                                 },
                                 gestureRecognizers: <Factory<
                                     OneSequenceGestureRecognizer>>{
                                   Factory<OneSequenceGestureRecognizer>(
                                       () => EagerGestureRecognizer()),
                                 },
-                                myLocationEnabled: true,
-                                myLocationButtonEnabled: true,
                               ),
                             ),
+
+
                     ),
                     Padding(
                       padding: const EdgeInsets.all(8.0),
@@ -3429,8 +3462,18 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error updating route data: $e');
     }
   }
+  void _onMapTap(LatLng latLng) async {
+    // Check if the tapped location intersects with any building polygon
+    bool isOnBuilding = _buildingPolygons.any((polygon) =>
+        polygon.points.any((point) => _isPointInPolygon(latLng, polygon)));
 
-  void _onMapTap(LatLng latLng) {
+    if (isOnBuilding) {
+      // Show snackbar indicating that the marker can't be placed on buildings or residential areas
+      _showSnackbar(context, 'Cannot place marker on building areas');
+      return; // Exit the function to avoid placing the marker
+    }
+
+    // Continue with marker placement if no building is detected
     final markerId = MarkerId('M${_markers.length + 1}');
     final newMarker = Marker(
       markerId: markerId,
@@ -3454,6 +3497,134 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     });
   }
+
+// Helper function to check if a point is inside a polygon
+  bool _isPointInPolygon(LatLng point, Polygon polygon) {
+    final List<LatLng> points = polygon.points;
+    int j = points.length - 1;
+    bool inside = false;
+
+    for (int i = 0; i < points.length; i++) {
+      if (points[i].longitude < point.longitude && points[j].longitude >= point.longitude ||
+          points[j].longitude < point.longitude && points[i].longitude >= point.longitude) {
+        if (points[i].latitude + (point.longitude - points[i].longitude) / (points[j].longitude - points[i].longitude) *
+            (points[j].latitude - points[i].latitude) < point.latitude) {
+          inside = !inside;
+        }
+      }
+      j = i;
+    }
+
+    return inside;
+  }
+  Future<void> _checkCityAndFetchData() async {
+    // Get the city name from the weatherController (you may need to adapt this part depending on your architecture)
+    String cityName = weatherController.weather.value.cityname;
+
+    if (cityName.isEmpty) {
+      print("City name is still loading...");
+      return; // Wait until city name is loaded
+    }
+
+    switch (cityName.toLowerCase()) {
+      case 'islamabad':
+        await _fetchBuildingData(
+            'https://overpass-api.de/api/interpreter?data=[out:json];node[building](33.6600,73.1000,34.2000,73.3000);out;');
+        break;
+      case 'rawalpindi':
+        await _fetchBuildingData(
+            'https://overpass-api.de/api/interpreter?data=[out:json];node[building](33.5667,73.0500,33.7167,73.2000);out;');
+        break;
+      case 'lahore':
+        await _fetchBuildingData(
+            'https://overpass-api.de/api/interpreter?data=[out:json];node[building](31.4000,73.0300,31.6000,74.4000);out;');
+        break;
+      case 'karachi':
+        await _fetchBuildingData(
+            'https://overpass-api.de/api/interpreter?data=[out:json];node[building](24.8500,66.8500,25.2000,67.2000);out;');
+        break;
+      case 'quetta':
+        await _fetchBuildingData(
+            'https://overpass-api.de/api/interpreter?data=[out:json];node[building](30.1000,66.8500,30.3000,67.0000);out;');
+        break;
+      default:
+        print('City not recognized for fetching building data.');
+        break;
+    }
+  }
+
+  Future<void> _fetchBuildingData(String url) async {
+    final response = await http.get(Uri.parse(url));
+
+    if (response.statusCode == 200) {
+      try {
+        final data = jsonDecode(response.body);
+        _processBuildingData(data);
+      } catch (e) {
+        print('Error decoding JSON: $e');
+      }
+    } else {
+      throw Exception('Failed to fetch building data');
+    }
+  }
+
+  void _processBuildingData(Map<String, dynamic> data) {
+    List<Polygon> polygons = [];
+
+    for (var element in data['elements']) {
+      if (element['type'] == 'node') {
+        var lat = element['lat'];
+        var lon = element['lon'];
+
+        // Create a circular polygon around the building coordinate
+        List<LatLng> circlePoints = _createCirclePoints(LatLng(lat, lon), 0.029, 8); // Radius and number of points
+
+        polygons.add(Polygon(
+          polygonId: PolygonId('building_${element['id']}'),
+          points: circlePoints,
+          strokeColor: Colors.red.shade900,
+          strokeWidth: 1,
+          fillColor: Colors.red.withOpacity(0.3),
+        ));
+      }
+    }
+
+    setState(() {
+      _buildingPolygons = polygons.toSet(); // Ensure you use Set<Polygon>
+    });
+  }
+
+  List<LatLng> _createCirclePoints(LatLng center, double radius, int pointsCount) {
+    List<LatLng> circlePoints = [];
+    const double degreeToRadians = pi / 180.0;
+
+    for (int i = 0; i < pointsCount; i++) {
+      double angle = degreeToRadians * (i * (360 / pointsCount)); // Distribute points evenly
+      double latOffset = radius * cos(angle);
+      double lonOffset = radius * sin(angle);
+
+      double lat = center.latitude + latOffset;
+      double lon = center.longitude + lonOffset;
+
+      circlePoints.add(LatLng(lat, lon));
+    }
+
+    return circlePoints;
+  }
+
+
+
+// Helper function to create zone points around a building node
+  List<LatLng> _createBuildingZonePoints(LatLng center) {
+    const double offset = 0.09; // Adjust this value to increase or decrease the zone size
+    return [
+      LatLng(center.latitude + offset, center.longitude + offset),
+      LatLng(center.latitude + offset, center.longitude - offset),
+      LatLng(center.latitude - offset, center.longitude - offset),
+      LatLng(center.latitude - offset, center.longitude + offset),
+    ];
+  }
+
 
 //area calculation of field
   double _calculateSphericalPolygonArea(List<LatLng> points) {
@@ -3640,6 +3811,31 @@ class _Fetch_InputState extends State<Fetch_Input> {
   }*/
 }
 
+
+void _showSnackbar(BuildContext context, String message) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(
+        message,
+        style: TextStyle(
+          fontFamily: GoogleFonts.poppins().fontFamily,
+          fontSize: 16,
+          color: Colors.white,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      backgroundColor: Colors.red.withOpacity(0.8),
+      duration: const Duration(seconds: 5),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(
+          Radius.circular(10),
+        ),
+      ),
+      behavior: SnackBarBehavior.floating,
+      margin: EdgeInsets.all(8),
+    ),
+  );
+}
 
 
 

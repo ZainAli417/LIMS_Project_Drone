@@ -98,21 +98,15 @@ class _Fetch_InputState extends State<Fetch_Input> {
   late Stream<DatabaseEvent> _latStream;
   late Stream<DatabaseEvent> _longStream;
   PathDirection _selectedDirection = PathDirection.horizontal;
-  double _totalDistanceKM = 0.0;
-  double _remainingDistanceKM_SelectedPath = 0.0;
-  double distanceTraveled = 0.0;
-  double totalZigzagPathKm = 0.0;
-  double TLM = 0.0;
-
 
 
   //BOOL VARIABLE FOR COUSTOM MODES
   bool _isFullScreen = false;
-  bool _isUpPressed = false;
+  bool _isbackwardPressed = false;
   bool _isStop = false;
   bool _isLeftPressed = false;
   bool _isRightPressed = false;
-  bool _isDownPressed = false;
+  bool _isforwardPressed = false;
   bool _isMoving = false;
   bool _isConfirmed = false;
   bool _ismanual = false;
@@ -133,7 +127,18 @@ class _Fetch_InputState extends State<Fetch_Input> {
   Set<Polyline> _polylines = {};
   Set<Polygon> polygons = {};
   List<LatLng> _dronepath = [];
-
+  double _totalDistanceKM = 0.0;
+  double _remainingDistanceKM_SelectedPath = 0.0;
+  double distanceTraveled = 0.0;
+  double totalZigzagPathKm = 0.0;
+  double TLM = 0.0;
+  String direction = ""; // Can be "forward" or "backward"
+  double speed = 10.0; // meters per second
+  double totalDistanceCoveredKM_SelectedPath = 0.0;
+  double distanceCoveredInWholeJourney = 0.0;
+  double segmentDistanceCoveredKM = 0.0;
+  double updateInterval = 0.1; // seconds
+  VoidCallback? _controllerButtonListener; // Fix 1
 
   double pathWidth = 10.0;
   bool _isHorizontalDirection = false;
@@ -163,8 +168,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
   LatLng? _selectedStartingPoint;
 
   String get message => 'Cannot place marker on buildings. Please select a plain area';
-
-  String direction = ""; // Can be "forward" or "backward"
 
 
   void _resetMarkers() async {
@@ -254,12 +257,17 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     return totalzigzagdis;
   } // Return distance in kilometers
+
+
+
+
   void _startMovement(List<LatLng> path, List<List<LatLng>> selectedSegments) {
     if (path.isEmpty || _selectedStartingPoint == null) {
       print(
           "Path is empty or starting point not selected, cannot start movement");
       return;
     }
+    _isMoving = true;
 
     // Find the nearest point on the path to the selected starting point
     int startingPointIndex =
@@ -275,12 +283,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     Add_Car_Marker(_isSegmentSelected(
         path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
 
-    double updateInterval = 0.1; // seconds
-    _isMoving = true;
-    double speed = 10.0; // meters per second
-    double totalDistanceCoveredKM_SelectedPath = 0.0;
-    double distanceCoveredInWholeJourney = 0.0;
-    double segmentDistanceCoveredKM = 0.0;
 
     // Determine movement direction based on starting point
     bool movingForward = startingPointIndex < path.length / 2;
@@ -438,6 +440,12 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     });
   }
+
+
+
+
+
+
 // Helper function to find the closest point in the path to the selected starting point
   /*int _findClosestPointIndex(List<LatLng> path, LatLng startingPoint) {
     if (path.isEmpty) return -1; // No path, return invalid index
@@ -1320,11 +1328,16 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           // Update polyline colors
                           _updatePolylineColors(selectedSegments);
                         });
-
-                        if (!_isMoving ) {
-                          _startMovement(_dronepath, _selectedPathsQueue);
-                          //_manualMovement(_dronepath, _selectedPathsQueue, direction);
+                        if (!_isMoving) {
+                          if (widget.isManualControl) {
+                            // Call manual movement function if manual control is enabled
+                            _startManualMovement(_dronepath, _selectedPathsQueue);
+                          } else {
+                            // Call the default movement function otherwise
+                            _startMovement(_dronepath, _selectedPathsQueue);
+                          }
                         }
+
                       },
                       child: Text(
                         'Start Spraying',
@@ -1421,7 +1434,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
                           return CheckboxListTile(
                             title: Text(
-                              'Vertical Route #$routeNumber',
+                              'Route #$routeNumber',
                               style: GoogleFonts.poppins(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w500,
@@ -1488,8 +1501,15 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         });
 
                         if (!_isMoving) {
-                          _startMovement(_dronepath, _selectedPathsQueue);
+                          if (widget.isManualControl) {
+                            // Call manual movement function if manual control is enabled
+                            _startManualMovement(_dronepath, _selectedPathsQueue);
+                          } else {
+                            // Call the default movement function otherwise
+                            _startMovement(_dronepath, _selectedPathsQueue);
+                          }
                         }
+
                       },
                       child: Text(
                         'Start Spraying',
@@ -2376,11 +2396,14 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
   }
 
-  void _manualMovement(
-      List<LatLng> path, List<List<LatLng>> selectedSegments, String direction) {
+
+
+
+
+
+  void _startManualMovement(List<LatLng> path, List<List<LatLng>> selectedSegments) {
     if (path.isEmpty || _selectedStartingPoint == null) {
-      print(
-          "Path is empty or starting point not selected, cannot start movement");
+      print("Path is empty or starting point not selected, cannot start movement");
       return;
     }
 
@@ -2389,67 +2412,206 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     // Set the car's initial position to the selected starting point
     setState(() {
-      _carPosition = path[startingPointIndex];
+      _isMoving=false;
+      _carPosition = path[startingPointIndex]; // Start from the closest point
       _currentPointIndex = startingPointIndex;
     });
 
-    double updateInterval = 0.1; // seconds
-    double speed = 10.0; // meters per second
-    double segmentDistanceCoveredKM = 0.0;
+    // Decide the direction-specific marker function
+    Add_Car_Marker(_isSegmentSelected(
+        path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
 
-    bool movingForward = direction == 'forward';
-    bool movingBackward = direction == 'backward';
-    bool movingUp = direction == 'up';
-    bool movingDown = direction == 'down';
+    // Initialize movement variables
 
-    _isMoving = true;
 
-    // Start movement with timer
-    _movementTimer = Timer.periodic(
-        Duration(milliseconds: (updateInterval * 1000).toInt()), (timer) {
-      if (_isMoving) {
-        LatLng start, end;
-        if (movingForward && _currentPointIndex < path.length - 1) {
-          start = path[_currentPointIndex];
-          end = path[_currentPointIndex + 1];
-        } else if (movingBackward && _currentPointIndex > 0) {
-          start = path[_currentPointIndex];
-          end = path[_currentPointIndex - 1];
-        } else if (movingUp || movingDown) {
-          start = path[_currentPointIndex];
-          end = movingUp ? path[_currentPointIndex + 1] : path[_currentPointIndex - 1];
-        } else {
-          timer.cancel();
-          _isMoving = false;
-          return;
-        }
+    // Initialize movement direction
+    bool movingForward = true;
 
-        double segmentDistanceKM = calculateonelinedistance(start, end);
-        double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
-        segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-        double segmentProgress =
-        (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
-        _carPosition = _lerpLatLng(start, end, segmentProgress);
+    // Start listening to controller button presses
+    _controllerButtonListener = () {
+      if (_isbackwardPressed) {
+        _moveBackward(path, selectedSegments);
+      } else if (_isforwardPressed) {
+        _moveForward(path, selectedSegments);
+      } 
+      /*else if (_isLeftPressed) {
+        _moveLeft(path, selectedSegments);
+      } else if (_isRightPressed) {
+        _moveRight(path, selectedSegments);
+      }*/
+      else if (_isStop) {
+        _isStop=true;
+        _stopMovement();
+      }
+    };
+  }
 
+  void _moveBackward(List<LatLng> path, List<List<LatLng>> selectedSegments) {
+    if (_currentPointIndex > 0) {
+      LatLng end = path[_currentPointIndex]; // Current point (end for reverse movement)
+      LatLng start = path[_currentPointIndex - 1]; // Previous point (start for reverse movement)
+      double segmentDistanceKM = calculateonelinedistance(start, end);
+      double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
+
+      // Continue from the previously covered segment distance without resetting it
+      segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+
+      // Calculate reverse progress, continuing from where the forward movement stopped
+      double segmentProgress = 1.0 - (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+      _carPosition = _lerpLatLng(end, start, segmentProgress); // Reverse interpolation
+
+      bool isSelectedSegment = _isSegmentSelected(
+        path,
+        selectedSegments,
+        _currentPointIndex - 1,
+        PathDirection.horizontal,
+      );
+
+      distanceCoveredInWholeJourney -= distanceCoveredInThisTickKM; // Subtract distance since moving backward
+
+      if (isSelectedSegment) {
+        totalDistanceCoveredKM_SelectedPath -= distanceCoveredInThisTickKM; // Subtract distance for selected path
+        double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
         setState(() {
-          _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
-          Add_Car_Marker(_isSegmentSelected(
-              path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
-
-          if (segmentProgress >= 1.0) {
-            _currentPointIndex += movingForward ? 1 : -1;
-            segmentDistanceCoveredKM = 0.0;
-          }
+          _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
+          _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
         });
 
-        if (_currentPointIndex >= path.length - 1 || _currentPointIndex <= 0) {
-          _isMoving = false;
-          timer.cancel();
+        if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
+          FirebaseDatabase.instance.ref().child('remainingDistance').set(_remainingDistanceKM_SelectedPath);
         }
       }
+
+      setState(() {
+        _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
+      });
+
+      // Update car marker position
+      setState(() {
+        _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
+        Add_Car_Marker(isSelectedSegment);
+
+        if (segmentProgress <= 0.0) { // We are done with this segment and need to move to the previous one
+          _currentPointIndex--; // Move to the previous segment
+          segmentDistanceCoveredKM = 0.0; // Reset the segment distance for the next segment
+        }
+      });
+    }
+  }
+
+
+  void _moveForward(List<LatLng> path, List<List<LatLng>> selectedSegments) {
+    if (_currentPointIndex < path.length - 1) {
+      LatLng start = path[_currentPointIndex]; // Current point (start for forward movement)
+      LatLng end = path[_currentPointIndex + 1]; // Next point (end for forward movement)
+      double segmentDistanceKM = calculateonelinedistance(start, end);
+      double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
+      segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+
+      // Calculate forward progress (moving from start to end)
+      double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+      _carPosition = _lerpLatLng(start, end, segmentProgress); // Forward interpolation
+
+      bool isSelectedSegment = _isSegmentSelected(
+        path,
+        selectedSegments,
+        _currentPointIndex,
+        PathDirection.horizontal,
+      );
+
+      distanceCoveredInWholeJourney += distanceCoveredInThisTickKM; // Add distance for forward movement
+
+      if (isSelectedSegment) {
+        totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
+        double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+        setState(() {
+          _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
+          _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+        });
+
+        if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
+          FirebaseDatabase.instance.ref().child('remainingDistance').set(_remainingDistanceKM_SelectedPath);
+        }
+      }
+
+      setState(() {
+        _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
+      });
+
+      // Update car marker position
+      setState(() {
+        _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
+        Add_Car_Marker(isSelectedSegment);
+
+        if (segmentProgress >= 1.0) {
+          _currentPointIndex++; // Move to the next segment
+          segmentDistanceCoveredKM = 0.0; // Reset the segment distance for the next segment
+        }
+      });
+    }
+  }
+  bool _isStraightLine(List<LatLng> path, int index) {
+    if (index <= 0 || index >= path.length - 1) return false;
+
+    LatLng prev = path[index - 1];
+    LatLng current = path[index];
+    LatLng next = path[index + 1];
+
+    double dx1 = current.longitude - prev.longitude;
+    double dy1 = current.latitude - prev.latitude;
+    double dx2 = next.longitude - current.longitude;
+    double dy2 = next.latitude - current.latitude;
+
+    // Check if both vectors have the same direction (indicating a straight line)
+    return (dx1 * dy2 - dy1 * dx2).abs() < 0.0001; // Small tolerance for floating point errors
+  }
+
+  /*void _moveLeft(List<LatLng> path, List<List<LatLng>> selectedSegments) {
+    if (_currentPointIndex > 0 && !_isStraightLine(path, _currentPointIndex)) {
+      int newIndex = _currentPointIndex - 1;
+      while (newIndex >= 0 && !_isSegmentSelected(path, selectedSegments, newIndex, PathDirection.horizontal)) {
+        newIndex--;
+      }
+      if (newIndex >= 0) {
+        _carPosition = _lerpLatLng(path[_currentPointIndex], path[newIndex], 0.5); // Smaller interpolation step
+        _currentPointIndex = newIndex;
+        setState(() {
+          _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
+          Add_Car_Marker(_isSegmentSelected(path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
+        });
+      }
+    }
+  }
+
+  void _moveRight(List<LatLng> path, List<List<LatLng>> selectedSegments) {
+    if (_currentPointIndex < path.length - 1 && !_isStraightLine(path, _currentPointIndex)) {
+      int newIndex = _currentPointIndex + 1;
+      while (newIndex < path.length && !_isSegmentSelected(path, selectedSegments, newIndex, PathDirection.horizontal)) {
+        newIndex++;
+      }
+      if (newIndex < path.length) {
+        _carPosition = _lerpLatLng(path[_currentPointIndex], path[newIndex], 0.00005); // Smaller interpolation step
+        _currentPointIndex = newIndex;
+        setState(() {
+          _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
+          Add_Car_Marker(_isSegmentSelected(path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
+        });
+      }
+    }
+  }
+*/
+  void ManualStartMovement(void Function() moveFunction) {
+    _movementTimer?.cancel(); // Cancel any existing timer
+    _movementTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      moveFunction();
     });
   }
 
+  void _stopMovement() {
+    _movementTimer?.cancel(); // Stop the timer when button is released
+    _movementTimer = null;
+    _isMoving = false;
+  }
 
 
 
@@ -3013,79 +3175,85 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 ),
                               ],
                             ),
-
-                            // Rem Time label and progress bar
-
                           ],
                         ),
-
-
-
-
                       ],
                     ),
                   ),
                 ),
 
               widget.isManualControl
-                  ? Column(
+                  ?
+
+
+
+
+
+
+              Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Row(
+                /*  Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      GestureDetector(
-                        onTapDown: (details) {
-                          setState(() {
-                            _manualMovement(_allPaths[0], selectedSegments, 'up');
-                          });
-                        },
-                        onTapUp: (details) {
-                          setState(() {
-                            _isMoving = false;
-                          });
-                        },
-                        child: Image.asset(
-                          'images/up.png',
-                          width: _isUpPressed ? 45 : 35,
-                          height: _isUpPressed ? 45 : 35,
-                        ),
+                      Column(
+                        children: [
+
+                          GestureDetector(
+                            onTapDown: (TapDownDetails details) {
+                              setState(() {
+                                _isbackwardPressed = true;
+                              });
+                              ManualStartMovement(() => _moveBackward(_dronepath, _selectedPathsQueue)); // Start movement
+                            },
+                            onTapUp: (TapUpDetails details) {
+                              setState(() {
+                                _isbackwardPressed = false;
+                              });
+                              _stopMovement(); // Stop movement when button released
+                            },
+                            child: Image.asset(
+                              _isbackwardPressed ? 'images/up_active.png' : 'images/up.png',
+                              width:50,
+                              height:50,
+                            ),
+                          ),                         
+                        ],
                       ),
                     ],
-                  ),
+                  ),*/
                   const SizedBox(height: 5),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       GestureDetector(
-                        onTapDown: (details) {
+                        onTapDown: (TapDownDetails details) {
                           setState(() {
-                            _manualMovement(_allPaths[0], selectedSegments, 'left');
+                            _isbackwardPressed = true;
                           });
+                          ManualStartMovement(() => _moveBackward(_dronepath, _selectedPathsQueue)); // Start movement
                         },
-                        onTapUp: (details) {
+                        onTapUp: (TapUpDetails details) {
                           setState(() {
-                            _isMoving = false;
+                            _isbackwardPressed = false;
                           });
+                          _stopMovement(); // Stop movement when button released
                         },
                         child: Image.asset(
-                          'images/left.png',
-                          width: _isLeftPressed ? 45 : 35,
-                          height: _isLeftPressed ? 45 : 35,
+                          _isbackwardPressed ? 'images/bwd_active.png' : 'images/bwd.png',
+                          width:50,
+                          height:50,
                         ),
                       ),
-                      SizedBox(width: 5),
+
+                      const SizedBox(width: 5),
                       GestureDetector(
-                        onTapDown: (details) {
+                        onTap: () {
                           setState(() {
-                            _isMoving = false; // Stop button
+                            _stopMovement(); // Stop movement function called
                           });
                         },
-                        onTapUp: (details) {
-                          setState(() {
-                            _isMoving = false;
-                          });
-                        },
+
                         child: Image.asset(
                           'images/stop.png',
                           width: _isStop ? 45 : 35,
@@ -3094,44 +3262,68 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       ),
                       SizedBox(width: 5),
                       GestureDetector(
-                        onTapDown: (details) {
+                        onTapDown: (TapDownDetails details) {
                           setState(() {
-                            _manualMovement(_allPaths[0], selectedSegments, 'right');
+                            _isforwardPressed = true;
                           });
+                          ManualStartMovement(() => _moveForward(_dronepath, _selectedPathsQueue)); // Start movement
                         },
-                        onTapUp: (details) {
+                        onTapUp: (TapUpDetails details) {
                           setState(() {
-                            _isMoving = false;
+                            _isforwardPressed = false;
                           });
+                          _stopMovement(); // Stop movement when button released
                         },
                         child: Image.asset(
-                          'images/right.png',
-                          width: _isRightPressed ? 45 : 35,
-                          height: _isRightPressed ? 45 : 35,
+                          _isforwardPressed ? 'images/fwd_active.png' : 'images/fwd.png',
+                          width: 50,
+                          height: 50,
                         ),
                       ),
+
                     ],
                   ),
-                  SizedBox(height: 5),
-                  GestureDetector(
-                    onTapDown: (details) {
-                      setState(() {
-                        _manualMovement(_allPaths[0], selectedSegments, 'down');
-                      });
-                    },
-                    onTapUp: (details) {
-                      setState(() {
-                        _isMoving = false;
-                      });
-                    },
-                    child: Image.asset(
-                      'images/down.png',
-                      width: _isDownPressed ? 45 : 35,
-                      height: _isDownPressed ? 45 : 35,
-                    ),
-                  ),
+                  /*Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Column(
+                        children: [
+
+                          GestureDetector(
+                            onTapDown: (TapDownDetails details) {
+                              setState(() {
+                                _isforwardPressed = true;
+                              });
+                              ManualStartMovement(() => _moveForward(_dronepath, _selectedPathsQueue)); // Start movement
+                            },
+                            onTapUp: (TapUpDetails details) {
+                              setState(() {
+                                _isforwardPressed = false;
+                              });
+                              _stopMovement(); // Stop movement when button released
+                            },
+                            child: Image.asset(
+                              _isforwardPressed ? 'images/down_active.png' : 'images/down.png',
+                              width: 50,
+                              height: 50,
+                            ),
+                          ),
+
+                          SizedBox(height: 10),
+                        ],
+                      ),
+                    ],
+                  ),*/
                 ],
-              ) : Container(),
+              )
+
+
+                  : Container(),
+
+
+
+
+
             ]),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,

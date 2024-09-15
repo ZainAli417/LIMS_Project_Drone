@@ -138,7 +138,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
   double pathWidth = 10.0;
   bool _isHorizontalDirection = false;
   late LatLng? selectedMarker =
-      _markers.isNotEmpty ? _markers.first.position : null;
+  _markers.isNotEmpty ? _markers.first.position : null;
 
   late GoogleMapController _googleMapController;
   final DatabaseReference _databaseReference = FirebaseDatabase.instance.ref();
@@ -162,7 +162,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
   double _turnLength = 5.0; // To store turn length
   LatLng? _selectedStartingPoint;
 
-  String get message => 'Cannot place marker on buildings. Please select a plain area'; // To store the selected starting point
+  String get message => 'Cannot place marker on buildings. Please select a plain area';
+
+  String direction = ""; // Can be "forward" or "backward"
 
 
   void _resetMarkers() async {
@@ -261,7 +263,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     // Find the nearest point on the path to the selected starting point
     int startingPointIndex =
-        _findClosestPointIndex(path, _selectedStartingPoint!);
+    _findClosestPointIndex(path, _selectedStartingPoint!);
 
     // Set the car's initial position to the selected starting point
     setState(() {
@@ -296,7 +298,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                 (speed * updateInterval) / 1000.0;
             segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
             double segmentProgress =
-                (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+            (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
             _carPosition = _lerpLatLng(start, end, segmentProgress);
 
             bool isSelectedSegment = _isSegmentSelected(
@@ -339,7 +341,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
             // Update car marker position
             setState(() {
               _markers.removeWhere(
-                  (marker) => marker.markerId == const MarkerId('car'));
+                      (marker) => marker.markerId == const MarkerId('car'));
               Add_Car_Marker(isSelectedSegment);
 
               if (segmentProgress >= 1.0) {
@@ -368,7 +370,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                 (speed * updateInterval) / 1000.0;
             segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
             double segmentProgress =
-                (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+            (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
             _carPosition = _lerpLatLng(start, end, segmentProgress);
 
             bool isSelectedSegment = _isSegmentSelected(
@@ -411,7 +413,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
             // Update car marker position
             setState(() {
               _markers.removeWhere(
-                  (marker) => marker.markerId == const MarkerId('car'));
+                      (marker) => marker.markerId == const MarkerId('car'));
 
               Add_Car_Marker(isSelectedSegment);
 
@@ -437,7 +439,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     });
   }
 // Helper function to find the closest point in the path to the selected starting point
-  int _findClosestPointIndex(List<LatLng> path, LatLng startingPoint) {
+  /*int _findClosestPointIndex(List<LatLng> path, LatLng startingPoint) {
     if (path.isEmpty) return -1; // No path, return invalid index
 
     int closestIndex = 0;
@@ -454,7 +456,24 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
 
     return closestIndex; // Return the index of the closest point
+  }*/
+
+  int _findClosestPointIndex(List<LatLng> path, LatLng targetPoint) {
+    int closestPointIndex = 0;
+    double closestDistance = double.infinity;
+
+    for (int i = 0; i < path.length; i++) {
+      double distance = calculateonelinedistance(path[i], targetPoint);
+
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestPointIndex = i;
+      }
+    }
+
+    return closestPointIndex;
   }
+
   void Selecting_Path_Direction_and_Turn() {
     bool isStartingPointEmpty = false; // Validation flag for the dropdown
 
@@ -540,7 +559,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               setState(() {
                                 _selectedDirection = value!;
                                 _isHorizontalDirection =
-                                    (value == PathDirection.horizontal);
+                                (value == PathDirection.horizontal);
                               });
                             },
                           ),
@@ -559,7 +578,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               setState(() {
                                 _selectedDirection = value!;
                                 _isHorizontalDirection =
-                                    (value == PathDirection.horizontal);
+                                (value == PathDirection.horizontal);
                               });
                             },
                           ),
@@ -595,8 +614,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       value: _selectedStartingPoint,
                       isExpanded: true,
                       items: (_isCustomMode
-                              ? _markers
-                              : _markers.sublist(0, _markers.length - 1))
+                          ? _markers
+                          : _markers.sublist(0, _markers.length - 1))
                           .map((marker) {
                         return DropdownMenuItem<LatLng>(
                           value: marker.position,
@@ -617,14 +636,14 @@ class _Fetch_InputState extends State<Fetch_Input> {
                             if (marker.markerId == _selectedMarkerId) {
                               return marker.copyWith(
                                 iconParam:
-                                    BitmapDescriptor.defaultMarkerWithHue(
-                                        BitmapDescriptor.hueGreen),
+                                BitmapDescriptor.defaultMarkerWithHue(
+                                    BitmapDescriptor.hueGreen),
                               );
                             } else {
                               return marker.copyWith(
                                 iconParam:
-                                    BitmapDescriptor.defaultMarkerWithHue(
-                                        BitmapDescriptor.hueAzure),
+                                BitmapDescriptor.defaultMarkerWithHue(
+                                    BitmapDescriptor.hueAzure),
                               );
                             }
                           }).toList();
@@ -763,30 +782,30 @@ class _Fetch_InputState extends State<Fetch_Input> {
 // Check if two horizontal segments are equal
   bool _isHorizontalSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
     return (segment1[0].latitude == segment2[0].latitude &&
-            segment1[1].latitude == segment2[1].latitude &&
-            (segment1[0].longitude == segment2[0].longitude &&
-                    segment1[1].longitude == segment2[1].longitude ||
-                segment1[0].longitude == segment2[1].longitude &&
-                    segment1[1].longitude == segment2[0].longitude)) ||
+        segment1[1].latitude == segment2[1].latitude &&
+        (segment1[0].longitude == segment2[0].longitude &&
+            segment1[1].longitude == segment2[1].longitude ||
+            segment1[0].longitude == segment2[1].longitude &&
+                segment1[1].longitude == segment2[0].longitude)) ||
         (segment1[0].latitude == segment2[1].latitude &&
             segment1[1].latitude == segment2[0].latitude &&
             (segment1[0].longitude == segment2[0].longitude &&
-                    segment1[1].longitude == segment2[1].longitude ||
+                segment1[1].longitude == segment2[1].longitude ||
                 segment1[0].longitude == segment2[1].longitude &&
                     segment1[1].longitude == segment2[0].longitude));
   }
 // Check if two vertical segments are equal
   bool _isVerticalSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
     return (segment1[0].longitude == segment2[0].longitude &&
-            segment1[1].longitude == segment2[1].longitude &&
-            (segment1[0].latitude == segment2[0].latitude &&
-                    segment1[1].latitude == segment2[1].latitude ||
-                segment1[0].latitude == segment2[1].latitude &&
-                    segment1[1].latitude == segment2[0].latitude)) ||
+        segment1[1].longitude == segment2[1].longitude &&
+        (segment1[0].latitude == segment2[0].latitude &&
+            segment1[1].latitude == segment2[1].latitude ||
+            segment1[0].latitude == segment2[1].latitude &&
+                segment1[1].latitude == segment2[0].latitude)) ||
         (segment1[0].longitude == segment2[1].longitude &&
             segment1[1].longitude == segment2[0].longitude &&
             (segment1[0].latitude == segment2[0].latitude &&
-                    segment1[1].latitude == segment2[1].latitude ||
+                segment1[1].latitude == segment2[1].latitude ||
                 segment1[0].latitude == segment2[1].latitude &&
                     segment1[1].latitude == segment2[0].latitude));
   }
@@ -960,7 +979,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: Colors.indigo[
-                              800], // Indigo color for the file source value
+                          800], // Indigo color for the file source value
                         ),
                       ),
                     ],
@@ -980,12 +999,12 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       ),
                       TextSpan(
                         text:
-                            _selectedLocalFile ?? _selectedCloudFile ?? 'None',
+                        _selectedLocalFile ?? _selectedCloudFile ?? 'None',
                         style: GoogleFonts.poppins(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: Colors.indigo[
-                              800], // Indigo color for the selected file value
+                          800], // Indigo color for the selected file value
                         ),
                       ),
                     ],
@@ -1010,7 +1029,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: Colors.indigo[
-                              800], // Indigo color for the turn length value
+                          800], // Indigo color for the turn length value
                         ),
                       ),
                     ],
@@ -1036,7 +1055,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: Colors.indigo[
-                              800], // Indigo color for the path direction value
+                          800], // Indigo color for the path direction value
                         ),
                       ),
                     ],
@@ -1062,7 +1081,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: Colors.indigo[
-                              800], // Indigo color for the starting point value
+                          800], // Indigo color for the starting point value
                         ),
                       ),
                     ],
@@ -1207,7 +1226,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           // Select all routes
                           selectedSegments = List.generate(
                             _dronepath.length ~/ 2,
-                            (i) => i,
+                                (i) => i,
                           );
                         });
                       },
@@ -1283,7 +1302,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           );
                           selectedPaths.add(segment);
                           double segmentDistance =
-                              calculate_selcted_segemnt_distance(segment);
+                          calculate_selcted_segemnt_distance(segment);
                           totalDistance += segmentDistance;
                         }
 
@@ -1302,8 +1321,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           _updatePolylineColors(selectedSegments);
                         });
 
-                        if (!_isMoving) {
+                        if (!_isMoving ) {
                           _startMovement(_dronepath, _selectedPathsQueue);
+                          //_manualMovement(_dronepath, _selectedPathsQueue, direction);
                         }
                       },
                       child: Text(
@@ -1377,7 +1397,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         setState(() {
                           selectedSegments = List.generate(
                             verticalPaths.length,
-                            (i) => i,
+                                (i) => i,
                           );
                         });
                       },
@@ -1446,8 +1466,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         for (int index in selectedSegments) {
                           selectedPaths.add(verticalPaths[index]);
                           double segmentDistance =
-                              calculate_selcted_segemnt_distance(
-                                  verticalPaths[index]);
+                          calculate_selcted_segemnt_distance(
+                              verticalPaths[index]);
                           totalDistance += segmentDistance;
                         }
 
@@ -1494,12 +1514,12 @@ class _Fetch_InputState extends State<Fetch_Input> {
       // Update horizontal paths
       if (!isVertical) {
         _polylines.removeWhere(
-            (polyline) => polyline.polylineId.value == 'dronepath');
+                (polyline) => polyline.polylineId.value == 'dronepath');
         for (int i = 0; i < _dronepath.length ~/ 2; i++) {
           int startIndex = i * 2;
           List<LatLng> segment = _dronepath.sublist(startIndex, startIndex + 2);
           Color color =
-              selectedSegments.contains(i) ? Colors.green : Colors.red;
+          selectedSegments.contains(i) ? Colors.green : Colors.red;
           _polylines.add(Polyline(
             polylineId: PolylineId('dronepath_$i'),
             points: segment,
@@ -1510,11 +1530,11 @@ class _Fetch_InputState extends State<Fetch_Input> {
       } else {
         // Update vertical paths
         _polylines.removeWhere(
-            (polyline) => polyline.polylineId.value == 'verticalpath');
+                (polyline) => polyline.polylineId.value == 'verticalpath');
         for (int i = 0; i < _allPaths.length; i++) {
           List<LatLng> segment = _allPaths[i];
           Color color =
-              selectedSegments.contains(i) ? Colors.green : Colors.red;
+          selectedSegments.contains(i) ? Colors.green : Colors.red;
           _polylines.add(Polyline(
             polylineId: PolylineId('verticalpath_$i'),
             points: segment,
@@ -1610,8 +1630,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
 
     for (double lat = startLat - latIncrement;
-        lat >= minLat;
-        lat -= latIncrement) {
+    lat >= minLat;
+    lat -= latIncrement) {
       List<LatLng> intersections = [];
       for (int i = 0; i < polygon.length; i++) {
         LatLng p1 = polygon[i];
@@ -1635,7 +1655,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
 
     List<LatLng> dronePath =
-        straightPaths.expand((segment) => segment).toList();
+    straightPaths.expand((segment) => segment).toList();
     dronePath.insert(0, startPoint);
 
     double totalDistancezigzagKm = _calculateTotalDistanceZIGAG(dronePath);
@@ -1697,8 +1717,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
 
     for (double lng = startLng - lngIncrement;
-        lng >= minLng;
-        lng -= lngIncrement) {
+    lng >= minLng;
+    lng -= lngIncrement) {
       List<LatLng> intersections = [];
       for (int i = 0; i < polygon.length; i++) {
         LatLng p1 = polygon[i];
@@ -1722,7 +1742,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
 
     List<LatLng> dronePath =
-        straightPaths.expand((segment) => segment).toList();
+    straightPaths.expand((segment) => segment).toList();
     dronePath.insert(0, startPoint);
 
     double totalDistancezigzagKm = _calculateTotalDistanceZIGAG(dronePath);
@@ -1879,7 +1899,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                   _isCustomMode = true;
                   // _ismanual = true;
                   _selectedMethod =
-                      'Placing Markers Manually'; // Store selection
+                  'Placing Markers Manually'; // Store selection
                 });
                 Navigator.pop(context);
               },
@@ -1922,7 +1942,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
               onPressed: () {
                 setState(() {
                   _selectedMethod =
-                      'Load Coordinates From KML'; // Store selection
+                  'Load Coordinates From KML'; // Store selection
                 });
                 Navigator.pop(context);
                 _showFileSelectionPopup();
@@ -2310,9 +2330,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     return false;
   }
-
-
-
 // Function to fetch files from Firebase Storage
   Future<List<String>> _fetchCloudFiles() async {
     List<String> fileNames = [];
@@ -2344,7 +2361,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       if (_markerPositions.first == _markerPositions.last) {
         setState(() {
           _isShapeClosed =
-              true; // Set the boolean to true if the shape is closed
+          true; // Set the boolean to true if the shape is closed
         });
       } else {
         setState(() {
@@ -2354,10 +2371,90 @@ class _Fetch_InputState extends State<Fetch_Input> {
     } else {
       setState(() {
         _isShapeClosed =
-            false; // If fewer than 2 markers, the shape cannot be closed
+        false; // If fewer than 2 markers, the shape cannot be closed
       });
     }
   }
+
+  void _manualMovement(
+      List<LatLng> path, List<List<LatLng>> selectedSegments, String direction) {
+    if (path.isEmpty || _selectedStartingPoint == null) {
+      print(
+          "Path is empty or starting point not selected, cannot start movement");
+      return;
+    }
+
+    // Find the nearest point on the path to the selected starting point
+    int startingPointIndex = _findClosestPointIndex(path, _selectedStartingPoint!);
+
+    // Set the car's initial position to the selected starting point
+    setState(() {
+      _carPosition = path[startingPointIndex];
+      _currentPointIndex = startingPointIndex;
+    });
+
+    double updateInterval = 0.1; // seconds
+    double speed = 10.0; // meters per second
+    double segmentDistanceCoveredKM = 0.0;
+
+    bool movingForward = direction == 'forward';
+    bool movingBackward = direction == 'backward';
+    bool movingUp = direction == 'up';
+    bool movingDown = direction == 'down';
+
+    _isMoving = true;
+
+    // Start movement with timer
+    _movementTimer = Timer.periodic(
+        Duration(milliseconds: (updateInterval * 1000).toInt()), (timer) {
+      if (_isMoving) {
+        LatLng start, end;
+        if (movingForward && _currentPointIndex < path.length - 1) {
+          start = path[_currentPointIndex];
+          end = path[_currentPointIndex + 1];
+        } else if (movingBackward && _currentPointIndex > 0) {
+          start = path[_currentPointIndex];
+          end = path[_currentPointIndex - 1];
+        } else if (movingUp || movingDown) {
+          start = path[_currentPointIndex];
+          end = movingUp ? path[_currentPointIndex + 1] : path[_currentPointIndex - 1];
+        } else {
+          timer.cancel();
+          _isMoving = false;
+          return;
+        }
+
+        double segmentDistanceKM = calculateonelinedistance(start, end);
+        double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
+        segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+        double segmentProgress =
+        (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+        _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+        setState(() {
+          _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
+          Add_Car_Marker(_isSegmentSelected(
+              path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
+
+          if (segmentProgress >= 1.0) {
+            _currentPointIndex += movingForward ? 1 : -1;
+            segmentDistanceCoveredKM = 0.0;
+          }
+        });
+
+        if (_currentPointIndex >= path.length - 1 || _currentPointIndex <= 0) {
+          _isMoving = false;
+          timer.cancel();
+        }
+      }
+    });
+  }
+
+
+
+
+
+
 //UI BUILD
   @override
   Widget build(BuildContext context) {
@@ -2404,7 +2501,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       decoration: const BoxDecoration(
                         shape: BoxShape.circle,
                         color:
-                            Colors.white, // Set the background color to white
+                        Colors.white, // Set the background color to white
                       ),
                       child: Padding(
                         padding: const EdgeInsets.all(1),
@@ -2456,7 +2553,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                             ),
                             const SizedBox(
                                 width:
-                                    2), // Reduced spacing between icon and text
+                                2), // Reduced spacing between icon and text
 
                             IconButton(
                               icon: const Icon(
@@ -2522,83 +2619,83 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
                   widget.isManualControl
                       ? Padding(
-                          padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
-                          child: Container(
-                            padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
-                            width: 120,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: Colors.indigo[800],
-                              borderRadius:
-                                  const BorderRadius.all(Radius.circular(5)),
-                            ),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors
-                                    .white, // Set the background color to white
-                                borderRadius: BorderRadius.circular(
-                                    10), // Rounded corners
-                              ),
-                              child: Row(
-                                children: [
-                                  const SizedBox(width: 7),
-                                  Center(
-                                    child: Text(
-                                      "Manual Mode",
-                                      style: TextStyle(
-                                        color: Colors.indigo[
-                                            800], // Text color set to indigo
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 14,
-                                        fontFamily:
-                                            GoogleFonts.poppins().fontFamily,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                    padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
+                      width: 120,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.indigo[800],
+                        borderRadius:
+                        const BorderRadius.all(Radius.circular(5)),
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors
+                              .white, // Set the background color to white
+                          borderRadius: BorderRadius.circular(
+                              10), // Rounded corners
+                        ),
+                        child: Row(
+                          children: [
+                            const SizedBox(width: 7),
+                            Center(
+                              child: Text(
+                                "Manual Mode",
+                                style: TextStyle(
+                                  color: Colors.indigo[
+                                  800], // Text color set to indigo
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                  fontFamily:
+                                  GoogleFonts.poppins().fontFamily,
+                                ),
                               ),
                             ),
-                          ),
-                        )
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
                       : Padding(
-                          padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
-                          child: Container(
-                            padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
-                            width: 140,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: Colors.indigo[800],
-                              borderRadius:
-                                  const BorderRadius.all(Radius.circular(5)),
-                            ),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors
-                                    .white, // Set the background color to white
-                                borderRadius: BorderRadius.circular(
-                                    10), // Rounded corners
-                              ),
-                              child: Row(
-                                children: [
-                                  const SizedBox(width: 7),
-                                  Center(
-                                    child: Text(
-                                      "Autonomous Mode",
-                                      style: TextStyle(
-                                        color: Colors.indigo[
-                                            800], // Text color set to indigo
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12,
-                                        fontFamily:
-                                            GoogleFonts.poppins().fontFamily,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                    padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
+                      width: 140,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.indigo[800],
+                        borderRadius:
+                        const BorderRadius.all(Radius.circular(5)),
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors
+                              .white, // Set the background color to white
+                          borderRadius: BorderRadius.circular(
+                              10), // Rounded corners
+                        ),
+                        child: Row(
+                          children: [
+                            const SizedBox(width: 7),
+                            Center(
+                              child: Text(
+                                "Autonomous Mode",
+                                style: TextStyle(
+                                  color: Colors.indigo[
+                                  800], // Text color set to indigo
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  fontFamily:
+                                  GoogleFonts.poppins().fontFamily,
+                                ),
                               ),
                             ),
-                          ),
-                        )
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
                   // Return an empty widget if not purchased
                 ],
               ),
@@ -2864,7 +2961,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               ],
                             ),
 
-                  // Rem Dis label and progress bar
+                            // Rem Dis label and progress bar
                             Row(
                               children: [
                                 Row(
@@ -2887,7 +2984,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 ),
 
 
-                      const SizedBox(width: 10),
+                                const SizedBox(width: 10),
 
 
                                 Expanded(
@@ -2932,129 +3029,109 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
               widget.isManualControl
                   ? Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Column(
-                              children: [
-                                GestureDetector(
-                                  onTapDown: (TapDownDetails details) {
-                                    setState(() {
-                                      //start moving
-                                    });
-                                  },
-                                  onTapUp: (TapUpDetails details) {
-                                    setState(() {
-//stop moving
-                                    });
-                                    //_manualMovement(0); // Stop drone when button is released
-                                  },
-                                  child: Image.asset(
-                                    'images/up.png',
-                                    width: _isUpPressed ? 45 : 35,
-                                    height: _isUpPressed ? 45 : 35,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      GestureDetector(
+                        onTapDown: (details) {
+                          setState(() {
+                            _manualMovement(_allPaths[0], selectedSegments, 'up');
+                          });
+                        },
+                        onTapUp: (details) {
+                          setState(() {
+                            _isMoving = false;
+                          });
+                        },
+                        child: Image.asset(
+                          'images/up.png',
+                          width: _isUpPressed ? 45 : 35,
+                          height: _isUpPressed ? 45 : 35,
                         ),
-                        SizedBox(height: 5),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            GestureDetector(
-                              onTapDown: (TapDownDetails details) {
-                                setState(() {
-                                  //start moving
-                                });
-                              },
-                              onTapUp: (TapUpDetails details) {
-                                setState(() {
-//stop moving
-                                });
-                                //_manualMovement(0); // Stop drone when button is released
-                              },
-                              child: Image.asset(
-                                'images/left.png',
-                                width: _isLeftPressed ? 45 : 35,
-                                height: _isLeftPressed ? 45 : 35,
-                              ),
-                            ),
-                            SizedBox(width: 5),
-                            GestureDetector(
-                              onTapDown: (TapDownDetails details) {
-                                setState(() {
-                                  //start moving
-                                });
-                              },
-                              onTapUp: (TapUpDetails details) {
-                                setState(() {
-//stop moving
-                                });
-                                //_manualMovement(0); // Stop drone when button is released
-                              },
-                              child: Image.asset(
-                                'images/stop.png',
-                                width: _isStop ? 45 : 35,
-                                height: _isStop ? 45 : 35,
-                              ),
-                            ),
-                            SizedBox(width: 5),
-                            GestureDetector(
-                              onTapDown: (TapDownDetails details) {
-                                setState(() {
-                                  //start moving
-                                });
-                              },
-                              onTapUp: (TapUpDetails details) {
-                                setState(() {
-//stop moving
-                                });
-                                //_manualMovement(0); // Stop drone when button is released
-                              },
-                              child: Image.asset(
-                                'images/right.png',
-                                width: _isRightPressed ? 45 : 35,
-                                height: _isRightPressed ? 45 : 35,
-                              ),
-                            ),
-                          ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      GestureDetector(
+                        onTapDown: (details) {
+                          setState(() {
+                            _manualMovement(_allPaths[0], selectedSegments, 'left');
+                          });
+                        },
+                        onTapUp: (details) {
+                          setState(() {
+                            _isMoving = false;
+                          });
+                        },
+                        child: Image.asset(
+                          'images/left.png',
+                          width: _isLeftPressed ? 45 : 35,
+                          height: _isLeftPressed ? 45 : 35,
                         ),
-                        SizedBox(height: 5),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Column(
-                              children: [
-                                GestureDetector(
-                                  onTapDown: (TapDownDetails details) {
-                                    setState(() {
-                                      //start moving
-                                    });
-                                  },
-                                  onTapUp: (TapUpDetails details) {
-                                    setState(() {
-//stop moving
-                                    });
-                                    //_manualMovement(0); // Stop drone when button is released
-                                  },
-                                  child: Image.asset(
-                                    'images/down.png',
-                                    width: _isDownPressed ? 45 : 35,
-                                    height: _isDownPressed ? 45 : 35,
-                                  ),
-                                ),
-                                SizedBox(height: 10),
-                              ],
-                            ),
-                          ],
+                      ),
+                      SizedBox(width: 5),
+                      GestureDetector(
+                        onTapDown: (details) {
+                          setState(() {
+                            _isMoving = false; // Stop button
+                          });
+                        },
+                        onTapUp: (details) {
+                          setState(() {
+                            _isMoving = false;
+                          });
+                        },
+                        child: Image.asset(
+                          'images/stop.png',
+                          width: _isStop ? 45 : 35,
+                          height: _isStop ? 45 : 35,
                         ),
-                      ],
-                    )
-                  : Container(),
+                      ),
+                      SizedBox(width: 5),
+                      GestureDetector(
+                        onTapDown: (details) {
+                          setState(() {
+                            _manualMovement(_allPaths[0], selectedSegments, 'right');
+                          });
+                        },
+                        onTapUp: (details) {
+                          setState(() {
+                            _isMoving = false;
+                          });
+                        },
+                        child: Image.asset(
+                          'images/right.png',
+                          width: _isRightPressed ? 45 : 35,
+                          height: _isRightPressed ? 45 : 35,
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 5),
+                  GestureDetector(
+                    onTapDown: (details) {
+                      setState(() {
+                        _manualMovement(_allPaths[0], selectedSegments, 'down');
+                      });
+                    },
+                    onTapUp: (details) {
+                      setState(() {
+                        _isMoving = false;
+                      });
+                    },
+                    child: Image.asset(
+                      'images/down.png',
+                      width: _isDownPressed ? 45 : 35,
+                      height: _isDownPressed ? 45 : 35,
+                    ),
+                  ),
+                ],
+              ) : Container(),
             ]),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -3189,7 +3266,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
               decoration: BoxDecoration(
                 border: Border.all(color: Colors.black, width: 2),
                 borderRadius: BorderRadius.circular(20),
-                boxShadow: [],
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(20),
@@ -3200,54 +3276,57 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       child: _currentLocation == null
                           ? const Center(child: CircularProgressIndicator())
                           : RepaintBoundary(
-                              key: _googleMapKey, // Attach the key to GoogleMap
-                              child: GoogleMap(
-                                initialCameraPosition: _currentLocation != null
-                                    ? CameraPosition(
-                                        target: LatLng(
-                                          _currentLocation!.latitude!,
-                                          _currentLocation!.longitude!,
-                                        ),
-                                        zoom: 15.0,
-                                      )
-                                    : const CameraPosition(
-                                        target: LatLng(
-                                            0, 0), // Default fallback position
-                                        zoom: 3.0, // Low zoom for global view
-                                      ),
-                                markers: {
-                                  ..._markers,
-                                  if (_currentPosition != null)
-                                    Marker(
-                                      markerId:
-                                          const MarkerId('currentLocation'),
-                                      position: _currentPosition,
-                                      icon:
-                                          BitmapDescriptor.defaultMarkerWithHue(
-                                              BitmapDescriptor.hueViolet),
-                                    ),
-                                },
-                                polylines: _polylines,
-                                polygons: _buildingPolygons,
-                                zoomGesturesEnabled: true,
-                                rotateGesturesEnabled: true,
-                                scrollGesturesEnabled: true,
-                                buildingsEnabled: false,
-                                onTap: _isCustomMode ? _onMapTap : null,
-                                myLocationEnabled: true,
-                                myLocationButtonEnabled: false,
-                                onMapCreated: (controller) {
-                                  _googleMapController = controller;
-                                  // Camera animation is now handled separately.
-                                  _checkCityAndFetchData(); // Fetch and display building data on map creation
-                                },
-                                gestureRecognizers: <Factory<
-                                    OneSequenceGestureRecognizer>>{
-                                  Factory<OneSequenceGestureRecognizer>(
-                                      () => EagerGestureRecognizer()),
-                                },
-                              ),
+                        key: _googleMapKey, // Attach the key to GoogleMap
+                        child: GoogleMap(
+                          initialCameraPosition: _currentLocation != null
+                              ? CameraPosition(
+                            target: LatLng(
+                              _currentLocation!.latitude!,
+                              _currentLocation!.longitude!,
                             ),
+                            zoom: 15.0,
+                          )
+                              : const CameraPosition(
+                            target: LatLng(
+                                0, 0), // Default fallback position
+                            zoom: 3.0, // Low zoom for global view
+                          ),
+                          markers: {
+                            ..._markers,
+                            if (_currentPosition != null)
+                              Marker(
+                                markerId:
+                                const MarkerId('currentLocation'),
+                                position: _currentPosition,
+                                icon:
+                                BitmapDescriptor.defaultMarkerWithHue(
+                                    BitmapDescriptor.hueViolet),
+                              ),
+                          },
+                          polylines: _polylines,
+                          polygons: {
+                            ..._buildingPolygons, // Building detection polygons
+                            ...polygons,   // Custom polygons you will draw
+                          },
+                          zoomGesturesEnabled: true,
+                          rotateGesturesEnabled: true,
+                          scrollGesturesEnabled: true,
+                          buildingsEnabled: false,
+                          onTap: _isCustomMode ? _onMapTap : null,
+                          myLocationEnabled: true,
+                          myLocationButtonEnabled: false,
+                          onMapCreated: (controller) {
+                            _googleMapController = controller;
+                            // Camera animation is now handled separately.
+                            _checkCityAndFetchData(); // Fetch and display building data on map creation
+                          },
+                          gestureRecognizers: <Factory<
+                              OneSequenceGestureRecognizer>>{
+                            Factory<OneSequenceGestureRecognizer>(
+                                    () => EagerGestureRecognizer()),
+                          },
+                        ),
+                      ),
 
 
                     ),
@@ -3255,7 +3334,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       padding: const EdgeInsets.all(8.0),
                       child: ClipRRect(
                         borderRadius:
-                            BorderRadius.circular(30.0), // Capsule shape
+                        BorderRadius.circular(30.0), // Capsule shape
                         child: Container(
                           decoration: const BoxDecoration(
                             color: Colors.white,
@@ -3284,9 +3363,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 suffixIcon: IconButton(
                                   icon: const Icon(Icons.search,
                                       color:
-                                          Colors.black), // Customize icon color
+                                      Colors.black), // Customize icon color
                                   onPressed:
-                                      _hideKeyboard, // Hide keyboard on search button press
+                                  _hideKeyboard, // Hide keyboard on search button press
                                 ),
                                 contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16.0, vertical: 12.0),
@@ -3298,29 +3377,29 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               }
                               _debounce?.cancel();
                               final completer =
-                                  Completer<List<geocoding.Placemark>>();
+                              Completer<List<geocoding.Placemark>>();
                               _debounce = Timer(const Duration(microseconds: 1),
-                                  () async {
-                                List<geocoding.Placemark> placemarks = [];
-                                try {
-                                  List<geocoding.Location> locations =
+                                      () async {
+                                    List<geocoding.Placemark> placemarks = [];
+                                    try {
+                                      List<geocoding.Location> locations =
                                       await geocoding
                                           .locationFromAddress(pattern);
-                                  if (locations.isNotEmpty) {
-                                    placemarks = await Future.wait(
-                                      locations.map((location) =>
-                                          geocoding.placemarkFromCoordinates(
-                                            location.latitude,
-                                            location.longitude,
-                                          )),
-                                    ).then((results) =>
-                                        results.expand((x) => x).toList());
-                                  }
-                                } catch (e) {
-                                  // Handle error if needed
-                                }
-                                completer.complete(placemarks);
-                              });
+                                      if (locations.isNotEmpty) {
+                                        placemarks = await Future.wait(
+                                          locations.map((location) =>
+                                              geocoding.placemarkFromCoordinates(
+                                                location.latitude,
+                                                location.longitude,
+                                              )),
+                                        ).then((results) =>
+                                            results.expand((x) => x).toList());
+                                      }
+                                    } catch (e) {
+                                      // Handle error if needed
+                                    }
+                                    completer.complete(placemarks);
+                                  });
                               return completer.future;
                             },
                             itemBuilder:
@@ -3328,16 +3407,16 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               return ListTile(
                                 leading: const Icon(Icons.location_on,
                                     color:
-                                        Colors.green), // Customize icon color
+                                    Colors.green), // Customize icon color
                                 title: Text(
                                   suggestion.name ??
                                       'No Country/City Available',
                                   style: TextStyle(
                                     fontFamily:
-                                        GoogleFonts.poppins().fontFamily,
+                                    GoogleFonts.poppins().fontFamily,
                                     fontSize: 16.0,
                                     fontWeight:
-                                        FontWeight.w400, // Customize font size
+                                    FontWeight.w400, // Customize font size
                                     color: Colors.black, // Customize text color
                                   ),
                                 ),
@@ -3345,11 +3424,11 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                   suggestion.locality ?? 'No locality Exists',
                                   style: TextStyle(
                                     fontFamily:
-                                        GoogleFonts.poppins().fontFamily,
+                                    GoogleFonts.poppins().fontFamily,
 
                                     fontSize: 14.0, // Customize font size
                                     color:
-                                        Colors.black54, // Customize text color
+                                    Colors.black54, // Customize text color
                                   ),
                                 ),
                               );
@@ -3360,8 +3439,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                   '${suggestion.name ?? ''}, ${suggestion.locality ?? ''}';
                               try {
                                 List<geocoding.Location> locations =
-                                    await geocoding
-                                        .locationFromAddress(address);
+                                await geocoding
+                                    .locationFromAddress(address);
                                 if (locations.isNotEmpty) {
                                   final location = locations.first;
 
@@ -3394,6 +3473,20 @@ class _Fetch_InputState extends State<Fetch_Input> {
     );
   }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   Future<void> captureBottomHalfGoogleMap() async {
     try {
       // Capture the widget as an image
@@ -3407,7 +3500,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
       // Convert the image to byte data and extract only the bottom half
       final ByteData? byteData =
-          await capturedImage.toByteData(format: ui.ImageByteFormat.png);
+      await capturedImage.toByteData(format: ui.ImageByteFormat.png);
 
       if (byteData != null) {
         final Uint8List pngBytes = byteData.buffer.asUint8List();
@@ -3422,7 +3515,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error capturing GoogleMap screenshot: $e');
     }
   }
-
   Uint8List cropBottomHalf(Uint8List originalBytes, int width, int height) {
     // Decode the original image from the Uint8List
     final img.Image? originalImage = img.decodeImage(originalBytes);
@@ -3443,7 +3535,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     return originalBytes; // Return original bytes if decoding fails
   }
-
   void animateToFirstMarker() {
     if (_isCustomMode == false && _markerPositions.isNotEmpty) {
       _googleMapController.animateCamera(
@@ -3456,7 +3547,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       );
     }
   }
-
   void _updateRouteData() {
     try {
       for (int i = 0; i < _markers.length; i++) {
@@ -3523,8 +3613,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     });
   }
-
-
 // Helper function to check if a point is inside a polygon
   bool _isPointInPolygon(LatLng point, List<LatLng> points) {
     int j = points.length - 1;
@@ -3543,10 +3631,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     return inside;
   }
-
   Future<void> _checkCityAndFetchData() async {
     // Get the city name from the weatherController (you may need to adapt this part depending on your architecture)
-   // String cityName = weatherController.weather.value.cityname;
+    // String cityName = weatherController.weather.value.cityname;
     String cityName = 'rawalpindi';
 
     if (cityName.isEmpty) {
@@ -3844,8 +3931,6 @@ void _showSnackbar(BuildContext context, String message) {
     ),
   );
 }
-
-
 void _showRestrictedAreaSnackbar(BuildContext context, String message) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
@@ -3875,7 +3960,6 @@ class _CardItem extends StatelessWidget {
   final String value;
   final Color color;
   final IconData icon;
-
   _CardItem({required this.title, required this.value, required this.color, required this.icon});
 
   @override

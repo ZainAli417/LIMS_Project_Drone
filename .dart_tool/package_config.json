@@ -260,6 +260,12 @@
       "languageVersion": "3.0"
     },
     {
+      "name": "flutter_marquee",
+      "rootUri": "file:///root/.pub-cache/hosted/pub.dev/flutter_marquee-2.0.1",
+      "packageUri": "lib/",
+      "languageVersion": "2.12"
+    },
+    {
       "name": "flutter_open_street_map",
       "rootUri": "file:///root/.pub-cache/hosted/pub.dev/flutter_open_street_map-0.0.4",
       "packageUri": "lib/",
@@ -872,7 +878,7 @@
       "languageVersion": "3.1"
     }
   ],
-  "generated": "2024-09-12T10:01:39.222225Z",
+  "generated": "2024-09-24T08:41:19.598178Z",
   "generator": "pub",
   "generatorVersion": "3.5.2",
   "flutterRoot": "file:///home/kali/Downloads/flutter",

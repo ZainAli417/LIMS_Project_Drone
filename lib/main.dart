@@ -48,7 +48,7 @@ class MyApp extends StatelessWidget {
         //  home:  SplashScreen() ,
         home: user == null ? SplashScreen() :  DeviceSelection(), // Navigate based on login state
         routes: {
-          '/home': (context) => const MyHomePage(),
+          '/home': (context) => const MyHomePage(deviceId: '',),
         },
       ),
     );

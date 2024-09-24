@@ -220,6 +220,9 @@ class _DeviceSelectionState extends State<DeviceSelection>
                                                   topRight: Radius.circular(15),
                                                 ),
                                               ),
+
+
+
                                               child: Table(
                                                 border: const TableBorder(
                                                   top: BorderSide.none,
@@ -403,13 +406,16 @@ class _DeviceSelectionState extends State<DeviceSelection>
                                                             child:
                                                                 ElevatedButton(
                                                               onPressed: () {
-                                                                Navigator
-                                                                    .pushReplacement(
+                                                                Navigator.pushReplacement(
+
                                                                   context,
+
                                                                   MaterialPageRoute(
-                                                                      builder:
-                                                                          (context) =>
-                                                                              const MyHomePage()),
+
+                                                                    builder: (context) => MyHomePage(deviceId: _devices[i]['device_Id'].substring(0, 3)),
+
+                                                                  ),
+
                                                                 );
                                                               },
                                                               style:
@@ -440,6 +446,7 @@ class _DeviceSelectionState extends State<DeviceSelection>
                                                       ],
                                                     ),
                                                 ],
+
                                               ),
                                             ),
                                           ],
@@ -472,7 +479,7 @@ class _DeviceSelectionState extends State<DeviceSelection>
                                             context,
                                             MaterialPageRoute(
                                               builder: (context) =>
-                                                  const MyHomePage(), // Pass the boolean value
+                                                  const MyHomePage(deviceId: '',), // Pass the boolean value
                                             ),
                                           );
                                         },

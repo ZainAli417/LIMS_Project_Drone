@@ -18,7 +18,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key});
+  final String deviceId;
+  const MyHomePage({super.key,required this.deviceId});
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
@@ -43,6 +44,7 @@ class _MyHomePageState extends State<MyHomePage> {
   bool isManual = false; // Add this at the top of your widget
 
   bool _isSolarOn = true;
+  bool _groundMode = false;
   @override
   void initState() {
     super.initState();
@@ -50,6 +52,11 @@ class _MyHomePageState extends State<MyHomePage> {
     _fetchData();
     getPosition();
     _fetchDevices();
+    if (widget.deviceId.contains('UGV')) {
+      setState(() {
+        _groundMode = true;
+      });
+    }
     final videoid = YoutubePlayer.convertUrlToId(videourl);
     /* _controller = YoutubePlayerController(
       initialVideoId: videoid!,
@@ -314,17 +321,18 @@ class _MyHomePageState extends State<MyHomePage> {
                                   borderRadius: BorderRadius.circular(
                                       10), // Rounded corners
                                 ),
+
                                 child: Row(
                                   children: [
                                     const CustomUGVIcon(), // Custom UGV connected icon
                                     const SizedBox(width: 7),
                                     Center(
                                       child: Text(
-                                        "UGV Connected ",
+                                        "${widget.deviceId} Connected ",
                                         style: TextStyle(
                                           color: Colors.indigo[
                                               800], // Text color set to indigo
-                                          fontWeight: FontWeight.bold,
+                                          fontWeight: FontWeight.w800,
                                           fontSize: 12,
                                           fontFamily:
                                               GoogleFonts.poppins().fontFamily,
@@ -334,6 +342,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                     const GreenBlinkingDot(), // Custom green blinking dot
                                   ],
                                 ),
+
                               ),
                             ),
                           )
@@ -547,7 +556,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                       MaterialPageRoute(
                                         builder: (context) => Fetch_Input(
                                             //controller: _controller,
-                                            isManualControl: isManual),
+                                            isManualControl: isManual,groundMode: _groundMode),
                                       ),
                                     );
                                   },
@@ -597,7 +606,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                       MaterialPageRoute(
                                         builder: (context) => Fetch_Input(
                                             // controller: _controller,
-                                            isManualControl: isManual),
+                                            isManualControl: isManual,groundMode: _groundMode),
                                       ),
                                     );
                                   },
@@ -683,7 +692,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                     MaterialPageRoute(
                                       builder: (context) => Fetch_Input(
                                           // controller: _controller,
-                                          isManualControl: isManual),
+                                          isManualControl: isManual,groundMode: _groundMode),
                                     ),
                                   );
                                 },
@@ -958,12 +967,14 @@ class CustomUGVIcon extends StatelessWidget {
         shape: BoxShape.circle,
         border: Border.all(width: 2, color: Colors.white),
       ),
-      child: ClipOval(
+
         child: Image.asset(
-          'images/ugv.png', // Path to the PNG image
+          width: 35,
+          height: 35,
+          'images/ugv_active.png', // Path to the PNG image
           fit: BoxFit.cover, // Ensures the image covers the circle
         ),
-      ),
+
     );
   }
 }
@@ -984,12 +995,12 @@ class _GreenBlinkingDotState extends State<GreenBlinkingDot>
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 900),
       vsync: this,
     )..repeat();
     _colorAnimation = ColorTween(
-      begin: Colors.green,
-      end: Colors.greenAccent,
+      begin: Colors.lightGreenAccent,
+      end: Colors.green[800],
     ).animate(_controller);
   }
 
@@ -1004,7 +1015,7 @@ class _GreenBlinkingDotState extends State<GreenBlinkingDot>
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color:
-                _colorAnimation.value ?? Colors.green, // Handle nullable color
+                _colorAnimation.value ?? Colors.green[800], // Handle nullable color
           ),
         );
       },

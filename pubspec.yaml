@@ -46,6 +46,7 @@ dependencies:
   animated_widgets: ^1.1.0
   file_picker: ^8.1.2
   path: ^1.9.0
+  flutter_marquee: ^2.0.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

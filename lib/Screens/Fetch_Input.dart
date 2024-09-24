@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
@@ -14,8 +15,6 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/widgets.dart';
-import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:math';
@@ -39,136 +38,180 @@ import 'package:latlong2/latlong.dart' as latlong;
 import 'package:http/http.dart' as http;
 import 'LoginScreen.dart';
 
-
 enum PathDirection { horizontal, vertical }
 
 class Fetch_Input extends StatefulWidget {
   // final YoutubePlayerController controller;
   final bool isManualControl; // Accept the boolean parameter
+  final bool groundMode;
   const Fetch_Input(
-      {Key? key, /*required this.controller*/ required this.isManualControl})
+      {Key? key,
+      /*required this.controller*/ required this.isManualControl,
+      required this.groundMode})
       : super(key: key);
   @override
   _Fetch_InputState createState() => _Fetch_InputState();
 }
 
-class _Fetch_InputState extends State<Fetch_Input> {
+class _Fetch_InputState extends State<Fetch_Input>
+    with SingleTickerProviderStateMixin {
   final GlobalKey _googleMapKey = GlobalKey(); // Key to capture GoogleMap
-  final ScreenshotController _screenshotController = ScreenshotController();
-  Timer? _debounce;
-  final FocusNode _focusNode = FocusNode();
-  int drone_direct = 0;
-  // UP = 3
-  // Down = 4
-  // Left = 1
-  // Right = 2
-  // Stop = 0
-  late BitmapDescriptor ugv_active;
-  late BitmapDescriptor ugv_dead;
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _showInputSelectionPopup();
-    });
-    _checkCityAndFetchData();
-
-    _requestLocationPermission();
-    _initializeFirebaseListener();
-    if (_markers.isNotEmpty) {
-      selectedMarker = _markers.first.position;
-    }
-    _carPosition = LatLng(0, 0); // Initialize with a default value
-    _loadCarIcons();
-
-
-
-
-  }
-
-  void dispose() {
-    _debounce?.cancel();
-    _movementTimer?.cancel(); // Add this line
-    super.dispose();
-  }
-//DEFAULT and Variables
+  late GoogleMapController _googleMapController;
   LatLng _currentPosition = LatLng(0, 0); // Default position
+  final gps.Location _location =
+      gps.Location(); // GPS location service instance
+  LocationData? _currentLocation; // Store the current location data
+  LatLng _carPosition = LatLng(0, 0); // Store the car's current position
+  late LatLng? selectedMarker = _markers.isNotEmpty
+      ? _markers.first.position
+      : null; // Store selected marker position
+
+// Firebase Variables for Lat/Lng Streaming
   late DatabaseReference _latRef;
   late DatabaseReference _longRef;
   late Stream<DatabaseEvent> _latStream;
   late Stream<DatabaseEvent> _longStream;
-  PathDirection _selectedDirection = PathDirection.horizontal;
 
+  // Firebase Storage Variables for Cloud Files
+  List<String> cloudFiles =
+      []; // Store list of cloud files fetched from Firebase
+  bool isLoading = true; // Track if cloud files are loading
 
-  //BOOL VARIABLE FOR COUSTOM MODES
-  bool _isFullScreen = false;
-  bool _isbackwardPressed = false;
-  bool _isStop = false;
-  bool _isLeftPressed = false;
-  bool _isRightPressed = false;
-  bool _isforwardPressed = false;
-  bool _isMoving = false;
-  bool _isConfirmed = false;
-  bool _ismanual = false;
+  // Path and Polyline Variables
+  Set<Polyline> _polylines = {}; // Store drawn paths
+  List<List<LatLng>> _allPaths = []; // All paths loaded
+  List<List<LatLng>> _selectedPathsQueue = []; // Selected path segments
+  late List<List<LatLng>>
+      selectedSegments; // Store only selected segments for the journey
+  int _currentSegmentIndex = 0; // Track the current segment being traversed
 
+  // Polygon and Marker Variables
+  Set<Polygon> _FieldPolygons = {}; // Store polygons representing Fields
+  Set<Polygon> polygons = {}; // Polygons that make up paths
+  List<LatLng> polygonPoints = []; // Store vertices of polygons
+  List<Marker> _markers = []; // List of markers
+  final List<LatLng> _markerPositions = []; // Marker positions
 
-  late LatLng _carPosition;
+  // Movement and Direction Variables
+  Timer? _movementTimer; // Timer to control movement updates
+  int drone_direct =
+      0; // Direction for drone (0 = stop, 1 = left, 2 = right, 3 = up, 4 = down)
+  double speed = 10.0; // Movement speed in meters per second
+  String direction = ""; // Store direction ("forward" or "backward")
+  PathDirection _selectedDirection =
+      PathDirection.horizontal; // Store the selected direction
+
+  // Distance Tracking Variables
+  double _totalDistanceKM = 0.0; // Total distance of path in KM
+  double distanceTraveled = 0.0; // Total distance traveled
+  double totalZigzagPathKm = 0.0; // Total zigzag path distance
+  double TLM = 0.0; // Total Linear Movement
+  double totalDistanceCoveredKM_SelectedPath =
+      0.0; // Total distance covered in selected path
+  double distanceCoveredInWholeJourney =
+      0.0; // Total distance covered in the entire journey
+  double segmentDistanceCoveredKM =
+      0.0; // Distance covered in the current segment
+  double _remainingDistanceKM_TotalPath =
+      0.0; // Remaining distance in the total path
+  double _remainingDistanceKM_SelectedPath =
+      0.0; // Remaining distance in the selected path
+
+  // UI and Input Control Variables
+  bool _isFullScreen = false; // Track fullscreen mode
+  bool _isStop = false; // Stop control flag
+  bool _isforwardPressed = false; // Track forward movement
+  bool _isbackwardPressed = false; // Track backward movement
+  bool _isMoving = false; // Track if vehicle is moving
+  bool _isConfirmed = false; // Track if confirmation is done
+  bool _ismanual = false; // Track if manual mode is enabled
+  bool _isCustomMode = false; // Custom mode flag
+  bool _isShapeClosed = false; // Check if shape (polygon) is closed
+
+  // UI for Method and File Selection
+  String? _selectedLocalFilePath; // Store local file path
+  String _selectedMethod = 'N/A'; // Store selected method
+  String? _selectedFileSource =
+      'N/A in Manual Mode'; // Store file source (Local or Cloud)
+  String? _selectedLocalFile =
+      'N/A in Manual Mode'; // Store selected local file
+  String? _selectedCloudFile =
+      'N/A in Manual Mode'; // Store selected cloud file
+  double _turnLength = 5.0; // Turn length for path calculation
+
+  // Miscellaneous Variables
+  final ScreenshotController _screenshotController =
+      ScreenshotController(); // Screenshot controller
+  final FocusNode _focusNode = FocusNode(); // Focus node for input controls
+  Timer? _debounce; // Debounce timer for input throttling
+  MarkerId? _selectedMarkerId; // Track the selected marker ID
+
+  // Firebase Realtime Database and Weather Controller
+  final DatabaseReference _databaseReference =
+      FirebaseDatabase.instance.ref(); // Firebase reference
+  final WeatherController weatherController =
+      Get.put(WeatherController()); // Weather controller
+  VoidCallback? _controllerButtonListener; // Button listener for the controller
+
+  // Custom Icons
+  late BitmapDescriptor ugv_active; // UGV active icon
+  late BitmapDescriptor ugv_dead; // UGV dead icon
   int _currentPointIndex = 0;
-  final gps.Location _location = gps.Location(); // Use the prefixed `gps.Location`
-  LocationData? _currentLocation;
-
-  //POLYGONS and LIST
-  Set<Polygon> _buildingPolygons = {};
-  final List<List<LatLng>> _selectedPathsQueue = [];
-  List<List<LatLng>> _allPaths = []; // Initialize _allPaths here
-  late List<List<LatLng>> selectedSegments;
-  late List<Marker> _markers = [];
-  final List<LatLng> _markerPositions = [];
-  Set<Polyline> _polylines = {};
-  Set<Polygon> polygons = {};
   List<LatLng> _dronepath = [];
-  double _totalDistanceKM = 0.0;
-  double _remainingDistanceKM_SelectedPath = 0.0;
-  double distanceTraveled = 0.0;
-  double totalZigzagPathKm = 0.0;
-  double TLM = 0.0;
-  String direction = ""; // Can be "forward" or "backward"
-  double speed = 10.0; // meters per second
-  double totalDistanceCoveredKM_SelectedPath = 0.0;
-  double distanceCoveredInWholeJourney = 0.0;
-  double segmentDistanceCoveredKM = 0.0;
   double updateInterval = 0.1; // seconds
-  VoidCallback? _controllerButtonListener; // Fix 1
-
   double pathWidth = 10.0;
   bool _isHorizontalDirection = false;
-  late LatLng? selectedMarker =
-  _markers.isNotEmpty ? _markers.first.position : null;
-
-  late GoogleMapController _googleMapController;
-  final DatabaseReference _databaseReference = FirebaseDatabase.instance.ref();
-  Timer? _movementTimer;
-  bool _isCustomMode = false;
-  bool _isShapeClosed = false;
-  double _remainingDistanceKM_TotalPath = 0.0;
-  List<LatLng> polygonPoints = [];
-  final WeatherController weatherController = Get.put(WeatherController());
-  MarkerId? _selectedMarkerId; // Add this to track the selected marker
-
   //USER SELECTION RECEIPT
-  String? _selectedLocalFilePath;
-  String _selectedMethod = 'N/A'; // Variable to store selected method
-  String? _selectedFileSource =
-      'N/A in Manual Mode'; // To store the file source (Local or Cloud)
-  String? _selectedLocalFile =
-      'N/A in Manual Mode'; // To store the selected local file
-  String? _selectedCloudFile =
-      'N/A in Manual Mode'; // To store the selected cloud file
-  double _turnLength = 5.0; // To store turn length
   LatLng? _selectedStartingPoint;
+  String get message =>
+      'Cannot place marker on Fields. Please select a plain area';
+  late AnimationController _controller;
+  double _offset = 0;
 
-  String get message => 'Cannot place marker on buildings. Please select a plain area';
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+        vsync: this, duration: Duration(seconds: 20))
+      ..addListener(() {
+        setState(() {
+          _offset =
+              _controller.value * 300; // Adjust according to your text width
+        });
+      });
+    _controller.repeat();
+    // Show input popup on widget load
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showInputSelectionPopup();
+    });
+    _fetchCloudFiles();
+    _initializeFirebaseListener();
+    _checkCityAndFetchData();
 
+    // Check city data and fetch necessary information
+    // Fetch cloud files from Firebase Storage
+    // Request location permissions from the user
+    _requestLocationPermission();
+    // Initialize Firebase Realtime Database listeners
+    // Initialize marker position if available
+    if (_markers.isNotEmpty) {
+      selectedMarker = _markers.first.position;
+    }
+    // Set default car position
+    _carPosition = LatLng(0, 0);
+    // Load car icons (active and dead)
+    _loadCarIcons();
+  }
+
+  @override
+  void dispose() {
+    // Cancel timers and cleanup listeners
+    _debounce?.cancel(); // Cancel debounce timer if active
+    _movementTimer?.cancel(); // Cancel movement timer if active
+    _focusNode.dispose();
+    _controller.dispose(); // Dispose focus node
+    super.dispose();
+  }
 
   void _resetMarkers() async {
     setState(() {
@@ -197,6 +240,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       MaterialPageRoute(builder: (BuildContext context) => widget),
     );
   }
+
   double calculate_selcted_segemnt_distance(List<LatLng> path) {
     double totalDistance = 0.0;
     for (int i = 0; i < path.length - 1; i++) {
@@ -206,11 +250,13 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     return totalDistance;
   } // Return distance in kilometers
+
   LatLng _lerpLatLng(LatLng a, LatLng b, double t) {
     double lat = a.latitude + (b.latitude - a.latitude) * t;
     double lng = a.longitude + (b.longitude - a.longitude) * t;
     return LatLng(lat, lng);
   }
+
   void _storeTimeDurationInDatabase(double totalDistanceInKM) {
     try {
       const double speed = 10; // Speed in meters per second
@@ -224,6 +270,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error storing time duration in database: $e');
     }
   }
+
   void _storeTimeLeftInDatabase(double remainingDistanceKM_SelectedPath) async {
     try {
       const double speed = 10; // Speed in meters per second
@@ -237,6 +284,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error storing time duration in database: $e');
     }
   }
+
   double calculateonelinedistance(LatLng start, LatLng end) {
     const R = 6371; // Radius of the Earth in kilometers
     double lat1 = start.latitude * pi / 180;
@@ -250,6 +298,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     double c = 2 * atan2(sqrt(a), sqrt(1 - a));
     return R * c; // Distance in kilometers
   }
+
   double _calculateTotalDistanceZIGAG(List<LatLng> path) {
     double totalzigzagdis = 0.0;
     for (int i = 0; i < path.length - 1; i++) {
@@ -258,10 +307,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
     return totalzigzagdis;
   } // Return distance in kilometers
 
-
-
-
-  void _startMovement(List<LatLng> path, List<List<LatLng>> selectedSegments) {
+  void _startMovement_UGV(
+      List<LatLng> path, List<List<LatLng>> selectedSegments) {
     if (path.isEmpty || _selectedStartingPoint == null) {
       print(
           "Path is empty or starting point not selected, cannot start movement");
@@ -271,7 +318,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     // Find the nearest point on the path to the selected starting point
     int startingPointIndex =
-    _findClosestPointIndex(path, _selectedStartingPoint!);
+        _findClosestPointIndex(path, _selectedStartingPoint!);
 
     // Set the car's initial position to the selected starting point
     setState(() {
@@ -282,7 +329,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     // Decide the direction-specific marker function
     Add_Car_Marker(_isSegmentSelected(
         path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
-
 
     // Determine movement direction based on starting point
     bool movingForward = startingPointIndex < path.length / 2;
@@ -300,7 +346,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                 (speed * updateInterval) / 1000.0;
             segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
             double segmentProgress =
-            (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+                (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
             _carPosition = _lerpLatLng(start, end, segmentProgress);
 
             bool isSelectedSegment = _isSegmentSelected(
@@ -343,7 +389,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
             // Update car marker position
             setState(() {
               _markers.removeWhere(
-                      (marker) => marker.markerId == const MarkerId('car'));
+                  (marker) => marker.markerId == const MarkerId('car'));
               Add_Car_Marker(isSelectedSegment);
 
               if (segmentProgress >= 1.0) {
@@ -372,7 +418,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                 (speed * updateInterval) / 1000.0;
             segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
             double segmentProgress =
-            (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+                (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
             _carPosition = _lerpLatLng(start, end, segmentProgress);
 
             bool isSelectedSegment = _isSegmentSelected(
@@ -415,7 +461,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
             // Update car marker position
             setState(() {
               _markers.removeWhere(
-                      (marker) => marker.markerId == const MarkerId('car'));
+                  (marker) => marker.markerId == const MarkerId('car'));
 
               Add_Car_Marker(isSelectedSegment);
 
@@ -441,10 +487,751 @@ class _Fetch_InputState extends State<Fetch_Input> {
     });
   }
 
+  void _startMovement_UAV(List<List<LatLng>> selectedSegmentsQueue) {
+    if (selectedSegmentsQueue.isEmpty || _selectedStartingPoint == null) {
+      print(
+          "Selected segments are empty or starting point not selected, cannot start movement");
+      return;
+    }
 
+    _isMoving = true;
+    int currentSegmentIndex = 0;
+    double totalDistanceCoveredKM_SelectedPath = 0.0;
+    double segmentDistanceCoveredKM = 0.0;
+    double distanceCoveredInWholeJourney = 0.0;
 
+    void _moveToNextSegment() {
+      if (currentSegmentIndex >= selectedSegmentsQueue.length) {
+        _isMoving = false;
+        _onPathComplete();
+        return;
+      }
 
+      List<LatLng> currentSegment = selectedSegmentsQueue[currentSegmentIndex];
+      int startingPointIndex =
+          _findClosestPointIndex(currentSegment, _selectedStartingPoint!);
 
+      setState(() {
+        _carPosition = currentSegment[startingPointIndex];
+        _currentPointIndex = startingPointIndex;
+      });
+
+      bool movingForward = startingPointIndex < currentSegment.length / 2;
+
+      _movementTimer = Timer.periodic(
+          Duration(milliseconds: (updateInterval * 1000).toInt()),
+          (timer) async {
+        if (_isMoving) {
+          if (movingForward) {
+            if (_currentPointIndex < currentSegment.length - 1) {
+              LatLng start = currentSegment[_currentPointIndex];
+              LatLng end = currentSegment[_currentPointIndex + 1];
+              double segmentDistanceKM = calculateonelinedistance(start, end);
+              double distanceCoveredInThisTickKM =
+                  (speed * updateInterval) / 1000.0;
+              segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+              double segmentProgress =
+                  (segmentDistanceCoveredKM / segmentDistanceKM)
+                      .clamp(0.0, 1.0);
+              _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+              distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+              totalDistanceCoveredKM_SelectedPath +=
+                  distanceCoveredInThisTickKM;
+              double remainingDistanceKM_SelectedPath =
+                  _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+
+              setState(() {
+                _remainingDistanceKM_SelectedPath =
+                    remainingDistanceKM_SelectedPath.clamp(
+                        0.0, _totalDistanceKM);
+                _remainingDistanceKM_TotalPath =
+                    (totalZigzagPathKm - distanceCoveredInWholeJourney)
+                        .clamp(0.0, totalZigzagPathKm);
+                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+                _markers.removeWhere(
+                    (marker) => marker.markerId == const MarkerId('car'));
+                Add_Car_Marker(true);
+
+                if (segmentProgress >= 1.0) {
+                  _currentPointIndex++;
+                  segmentDistanceCoveredKM = 0.0;
+                }
+              });
+
+              if (_currentPointIndex >= currentSegment.length - 1) {
+                timer.cancel();
+                currentSegmentIndex++;
+                _moveToNextSegment();
+              }
+            } else {
+              _isMoving = false;
+              timer.cancel();
+              _onPathComplete();
+            }
+          } else {
+            if (_currentPointIndex > 0) {
+              LatLng start = currentSegment[_currentPointIndex];
+              LatLng end = currentSegment[_currentPointIndex - 1];
+              double segmentDistanceKM = calculateonelinedistance(start, end);
+              double distanceCoveredInThisTickKM =
+                  (speed * updateInterval) / 1000.0;
+              segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+              double segmentProgress =
+                  (segmentDistanceCoveredKM / segmentDistanceKM)
+                      .clamp(0.0, 1.0);
+              _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+              distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+              totalDistanceCoveredKM_SelectedPath +=
+                  distanceCoveredInThisTickKM;
+              double remainingDistanceKM_SelectedPath =
+                  _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+
+              setState(() {
+                _remainingDistanceKM_SelectedPath =
+                    remainingDistanceKM_SelectedPath.clamp(
+                        0.0, _totalDistanceKM);
+                _remainingDistanceKM_TotalPath =
+                    (totalZigzagPathKm - distanceCoveredInWholeJourney)
+                        .clamp(0.0, totalZigzagPathKm);
+                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+                _markers.removeWhere(
+                    (marker) => marker.markerId == const MarkerId('car'));
+                Add_Car_Marker(true);
+
+                if (segmentProgress >= 1.0) {
+                  _currentPointIndex--;
+                  segmentDistanceCoveredKM = 0.0;
+                }
+              });
+
+              if (_currentPointIndex <= 0) {
+                timer.cancel();
+                currentSegmentIndex++;
+                _moveToNextSegment();
+              }
+            } else {
+              _isMoving = false;
+              timer.cancel();
+              _onPathComplete();
+            }
+          }
+        }
+      });
+    }
+
+    _moveToNextSegment();
+  }
+
+  /* void _startManualMovement_UGV(List<LatLng> path, List<List<LatLng>> selectedSegments, {required bool forward}) {
+    if (path.isEmpty || _selectedStartingPoint == null) {
+      print("Path is empty or starting point not selected, cannot start movement");
+      return;
+    }
+
+    // Continue movement if timer is active
+    if (_movementTimer != null && _movementTimer!.isActive) {
+      _isMoving = true;
+      return;
+    }
+
+    // Set the initial position if movement is just starting or resuming after stop
+    if (!_isMoving) {
+      int startingPointIndex = _findClosestPointIndex(path, _selectedStartingPoint!);
+
+      setState(() {
+        _carPosition = path[startingPointIndex];
+        _currentPointIndex = startingPointIndex;
+      });
+    }
+
+    // Add car marker
+    Add_Car_Marker(_isSegmentSelected(path, selectedSegments, _currentPointIndex, _isHorizontalDirection ? PathDirection.horizontal : PathDirection.vertical));
+
+    double updateInterval = 0.1; // seconds
+    double speed = 10.0; // meters per second
+    double segmentDistanceCoveredKM = 0.0;
+    double distanceCoveredInWholeJourney = 0.0;
+    double totalDistanceCoveredKM_SelectedPath = 0.0;
+
+    // Start movement with timer
+    _movementTimer = Timer.periodic(Duration(milliseconds: (updateInterval * 1000).toInt()), (timer) async {
+      if (_isMoving) {
+        if (forward) {
+          // Forward movement
+          if (_currentPointIndex < path.length) {
+            LatLng start = path[_currentPointIndex];
+            LatLng end = path[_currentPointIndex + 1];
+            double segmentDistanceKM = calculateonelinedistance(start, end);
+            double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
+            segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+            double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+            _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+            bool isSelectedSegment = _isSegmentSelected(path, selectedSegments, _currentPointIndex, _isHorizontalDirection ? PathDirection.horizontal : PathDirection.vertical);
+
+            distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+
+            if (isSelectedSegment) {
+              totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
+              double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+              setState(() {
+                _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
+                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+              });
+
+              if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
+                FirebaseDatabase.instance.ref().child('remainingDistance').set(_remainingDistanceKM_SelectedPath);
+              }
+            }
+
+            setState(() {
+              _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
+            });
+
+            // Update car marker position
+            setState(() {
+              _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
+              Add_Car_Marker(isSelectedSegment);
+
+              if (segmentProgress >= 1.0) {
+                _currentPointIndex = _currentPointIndex + 1;
+                segmentDistanceCoveredKM = 0.0;
+              }
+            });
+
+            // Stop forward movement at the end of the path
+            if (_currentPointIndex >= path.length) {
+              _isMoving = false;
+              timer.cancel();
+              if (totalDistanceCoveredKM_SelectedPath >= _totalDistanceKM) {
+                _onPathComplete();
+              }
+            }
+          }
+        } else {
+          // Backward movement only on previously covered distance
+          if (_currentPointIndex > 0) {
+            LatLng start = path[_currentPointIndex];
+            LatLng end = path[_currentPointIndex - 1];
+            double segmentDistanceKM = calculateonelinedistance(start, end);
+            double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
+            segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+            double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+            _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+            bool isSelectedSegment = _isSegmentSelected(path, selectedSegments, _currentPointIndex - 1, _isHorizontalDirection ? PathDirection.horizontal : PathDirection.vertical);
+
+            distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+
+            if (isSelectedSegment) {
+              totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
+              double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+              setState(() {
+                _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
+                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+              });
+
+              if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
+                FirebaseDatabase.instance.ref().child('remainingDistance').set(_remainingDistanceKM_SelectedPath);
+              }
+            }
+
+            setState(() {
+              _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
+            });
+
+            // Update car marker position
+            setState(() {
+              _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
+              Add_Car_Marker(isSelectedSegment);
+
+              if (segmentProgress >= 1.0) {
+                _currentPointIndex = _currentPointIndex - 1;
+                segmentDistanceCoveredKM = 0.0;
+              }
+            });
+
+            // Stop backward movement when at the starting point
+            if (_currentPointIndex <= 0) {
+              _isMoving = false;
+              timer.cancel();
+              _onPathComplete();
+            }
+          }
+        }
+      }
+    });
+  }*/
+  void _startManualMovement_UGV(
+      List<LatLng> path, List<List<LatLng>> selectedSegments,
+      {required bool forward}) {
+    if (path.isEmpty || _selectedStartingPoint == null) {
+      print(
+          "Path is empty or starting point not selected, cannot start movement");
+      return;
+    }
+
+    if (_movementTimer != null && _movementTimer!.isActive) {
+      _isMoving = true;
+      return;
+    }
+
+    // Determine the starting point in the path
+    int startingPointIndex =
+        _findClosestPointIndex(path, _selectedStartingPoint!);
+
+    // Set the initial marker position based on the starting point
+    if (!_isMoving) {
+      setState(() {
+        _carPosition = path[startingPointIndex];
+        _currentPointIndex = startingPointIndex;
+      });
+    }
+
+    Add_Car_Marker(_isSegmentSelected(
+        path,
+        selectedSegments,
+        _currentPointIndex,
+        _isHorizontalDirection
+            ? PathDirection.horizontal
+            : PathDirection.vertical));
+
+    double updateInterval = 0.1; // seconds
+    double speed = 10.0; // meters per second
+    double segmentDistanceCoveredKM = 0.0;
+    double totalDistanceCoveredKM_SelectedPath = 0.0;
+
+    // Start the timer to handle movement
+    _movementTimer = Timer.periodic(
+        Duration(milliseconds: (updateInterval * 1000).toInt()), (timer) async {
+      if (_isMoving) {
+        // Forward movement logic
+        if (forward) {
+          // Traverse the path forward from the selected starting point
+          if (_currentPointIndex < path.length - 1) {
+            LatLng start = path[_currentPointIndex];
+            LatLng end = path[_currentPointIndex + 1];
+            double segmentDistanceKM = calculateonelinedistance(start, end);
+            double distanceCoveredInThisTickKM =
+                (speed * updateInterval) / 1000.0;
+            segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+
+            double segmentProgress =
+                (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+            _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+            bool isSelectedSegment = _isSegmentSelected(
+                path,
+                selectedSegments,
+                _currentPointIndex,
+                _isHorizontalDirection
+                    ? PathDirection.horizontal
+                    : PathDirection.vertical);
+
+            if (isSelectedSegment) {
+              totalDistanceCoveredKM_SelectedPath +=
+                  distanceCoveredInThisTickKM;
+              double remainingDistanceKM_SelectedPath =
+                  _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+              setState(() {
+                _remainingDistanceKM_SelectedPath =
+                    remainingDistanceKM_SelectedPath.clamp(
+                        0.0, _totalDistanceKM);
+                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+              });
+            }
+
+            setState(() {
+              _markers.removeWhere(
+                  (marker) => marker.markerId == const MarkerId('car'));
+              Add_Car_Marker(isSelectedSegment);
+
+              // If the current segment is fully traversed, move to the next one
+              if (segmentProgress >= 1.0) {
+                _currentPointIndex++;
+                segmentDistanceCoveredKM = 0.0; // Reset the segment distance
+              }
+            });
+
+            // When the last point is reached, stop the movement
+            if (_currentPointIndex >= path.length - 1) {
+              _isMoving = false;
+              timer.cancel();
+              _onPathComplete();
+            }
+          } else {
+            _isMoving = false;
+            timer.cancel();
+            _onPathComplete();
+          }
+        } else {
+          // Backward movement logic (same as before)
+          if (_currentPointIndex > 0) {
+            LatLng start = path[_currentPointIndex];
+            LatLng end = path[_currentPointIndex - 1];
+            double segmentDistanceKM = calculateonelinedistance(start, end);
+            double distanceCoveredInThisTickKM =
+                (speed * updateInterval) / 1000.0;
+            segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+
+            double segmentProgress =
+                (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+            _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+            bool isSelectedSegment = _isSegmentSelected(
+                path,
+                selectedSegments,
+                _currentPointIndex - 1,
+                _isHorizontalDirection
+                    ? PathDirection.horizontal
+                    : PathDirection.vertical);
+
+            setState(() {
+              _markers.removeWhere(
+                  (marker) => marker.markerId == const MarkerId('car'));
+              Add_Car_Marker(isSelectedSegment);
+
+              // If the current segment is fully traversed, move to the previous one
+              if (segmentProgress >= 1.0) {
+                _currentPointIndex--;
+                segmentDistanceCoveredKM = 0.0;
+              }
+            });
+
+            // When the first point is reached, stop the movement
+            if (_currentPointIndex <= 0) {
+              _isMoving = false;
+              timer.cancel();
+              _onPathComplete();
+            }
+          } else {
+            _isMoving = false;
+            timer.cancel();
+            _onPathComplete();
+          }
+        }
+      }
+    });
+  }
+
+// Call this function when the button is released to stop the movement
+  void stopMovement() {
+    _isMoving = false;
+    _movementTimer?.cancel();
+  }
+
+  void _startManualMovement_UAV(List<List<LatLng>> selectedSegments,
+      {required bool forward}) {
+    if (selectedSegments.isEmpty || _selectedStartingPoint == null) {
+      print(
+          "Path is empty or starting point not selected, cannot start movement");
+      return;
+    }
+
+    // Set the initial position based on the selected point from dropdown
+    if (!_isMoving) {
+      // Find the closest point to the selected starting point in the selected path segment
+      int startingPointIndex =
+          _findClosestPointIndex(selectedSegments[0], _selectedStartingPoint!);
+      _currentPointIndex =
+          startingPointIndex; // Track the point in the current segment
+      _carPosition = selectedSegments[_currentSegmentIndex]
+          [_currentPointIndex]; // Set car position
+    }
+
+    // Add car marker only on selected paths
+    Add_Car_Marker(_isSegmentSelected(selectedSegments[_currentSegmentIndex],
+        selectedSegments, _currentPointIndex, PathDirection.horizontal));
+
+    // Start the movement
+    _moveUAV(forward);
+  }
+
+  void _moveUAV(bool forward) {
+    if (forward) {
+      // Forward movement logic across all segments
+      if (_currentSegmentIndex < _selectedPathsQueue.length) {
+        List<LatLng> currentSegment = _selectedPathsQueue[_currentSegmentIndex];
+
+        if (_currentPointIndex < currentSegment.length - 1) {
+          LatLng start = currentSegment[_currentPointIndex];
+          LatLng end = currentSegment[_currentPointIndex + 1];
+
+          double segmentDistanceKM = calculateonelinedistance(start, end);
+          double distanceCoveredInThisTickKM =
+              (speed * updateInterval) / 1000.0;
+          segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+
+          double segmentProgress =
+              (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+          _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+          bool isSelectedSegment = _isSegmentSelected(
+              currentSegment,
+              _selectedPathsQueue,
+              _currentPointIndex,
+              PathDirection.horizontal);
+
+          // Update distance only if moving forward
+          if (forward) {
+            distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+          }
+
+          if (isSelectedSegment) {
+            totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
+            double remainingDistanceKM_SelectedPath =
+                _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+
+            _remainingDistanceKM_SelectedPath =
+                remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
+            _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+
+            if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
+              FirebaseDatabase.instance
+                  .ref()
+                  .child('remainingDistance')
+                  .set(_remainingDistanceKM_SelectedPath);
+            }
+          }
+
+          _remainingDistanceKM_TotalPath =
+              (totalZigzagPathKm - distanceCoveredInWholeJourney)
+                  .clamp(0.0, totalZigzagPathKm);
+
+          // Update car marker
+          _markers.removeWhere(
+              (marker) => marker.markerId == const MarkerId('car'));
+          Add_Car_Marker(isSelectedSegment);
+
+          // Move to the next point if the segment is completed
+          if (segmentProgress >= 1.0) {
+            _currentPointIndex += 1;
+            segmentDistanceCoveredKM = 0.0;
+          }
+        } else {
+          // Move to the next segment if the current one is completed
+          _currentSegmentIndex += 1;
+          _currentPointIndex = 0; // Reset point index for the next segment
+        }
+
+        // Stop movement at the end of the last segment
+        if (_currentSegmentIndex >= _selectedPathsQueue.length - 1) {
+          _isMoving = false;
+          _onPathComplete(); // Trigger on path completion
+        }
+      }
+    } else {
+      // Backward movement logic across all segments
+      if (_currentSegmentIndex >= 0) {
+        List<LatLng> currentSegment = _selectedPathsQueue[_currentSegmentIndex];
+
+        if (_currentPointIndex > 0) {
+          LatLng start = currentSegment[_currentPointIndex];
+          LatLng end = currentSegment[_currentPointIndex - 1];
+
+          double segmentDistanceKM = calculateonelinedistance(start, end);
+          double distanceCoveredInThisTickKM =
+              (speed * updateInterval) / 1000.0;
+          segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+
+          double segmentProgress =
+              (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+          _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+          bool isSelectedSegment = _isSegmentSelected(
+              currentSegment,
+              _selectedPathsQueue,
+              _currentPointIndex - 1,
+              PathDirection.horizontal);
+
+          // Distance should still increase even when moving backward
+          distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+
+          if (isSelectedSegment) {
+            totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
+            double remainingDistanceKM_SelectedPath =
+                _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+
+            _remainingDistanceKM_SelectedPath =
+                remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
+            _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+
+            if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
+              FirebaseDatabase.instance
+                  .ref()
+                  .child('remainingDistance')
+                  .set(_remainingDistanceKM_SelectedPath);
+            }
+          }
+
+          _remainingDistanceKM_TotalPath =
+              (totalZigzagPathKm - distanceCoveredInWholeJourney)
+                  .clamp(0.0, totalZigzagPathKm);
+
+          // Update car marker
+          _markers.removeWhere(
+              (marker) => marker.markerId == const MarkerId('car'));
+          Add_Car_Marker(isSelectedSegment);
+
+          // Move to the previous point if the segment is completed
+          if (segmentProgress >= 1.0) {
+            _currentPointIndex -= 1;
+            segmentDistanceCoveredKM = 0.0;
+          }
+        } else {
+          // Move to the previous segment if the current one is completed
+          _currentSegmentIndex -= 1;
+          _currentPointIndex =
+              _selectedPathsQueue[_currentSegmentIndex].length -
+                  1; // Start from the last point of the previous segment
+        }
+
+        // Stop movement at the start of the first segment
+        if (_currentSegmentIndex < 0) {
+          _isMoving = false;
+          _onPathComplete(); // Trigger on path completion
+        }
+      }
+    }
+  }
+
+  /*
+  void _startMovement_UAV(List<List<LatLng>> selectedSegmentsQueue) {
+
+    if (selectedSegmentsQueue.isEmpty || _selectedStartingPoint == null) {
+      print("Selected segments queue is empty or starting point not selected, cannot start movement");
+      return;
+    }
+
+    _isMoving = true;
+
+    // Variables to track the current segment and its index
+    int currentSegmentIndex = 0;
+    List<LatLng> currentSegment = selectedSegmentsQueue[currentSegmentIndex];
+
+    // Find the nearest point on the path to the selected starting point
+    int startingPointIndex = _findClosestPointIndex(currentSegment, _selectedStartingPoint!);
+
+    // Set the car's initial position to the selected starting point
+    setState(() {
+      _carPosition = currentSegment[startingPointIndex];
+      _currentPointIndex = startingPointIndex;
+    });
+
+    // Set the initial movement direction
+    bool movingForward = startingPointIndex < currentSegment.length / 2;
+
+    // Start movement with a timer
+    _movementTimer = Timer.periodic(Duration(milliseconds: (updateInterval * 1000).toInt()), (timer) async {
+      if (_isMoving) {
+        // Handle forward movement
+        if (movingForward) {
+          if (_currentPointIndex < currentSegment.length - 1) {
+            _moveAlongSegment(
+              selectedSegmentsQueue,
+              currentSegment,
+              currentSegmentIndex,
+              forward: true,
+            );
+          } else {
+            // Move to the next segment if the current segment is complete
+            currentSegmentIndex++;
+            if (currentSegmentIndex >= selectedSegmentsQueue.length) {
+              _isMoving = false;
+              timer.cancel();
+              _onPathComplete(); // Path complete handler
+            } else {
+              // Move to the next selected segment
+              currentSegment = selectedSegmentsQueue[currentSegmentIndex];
+              _currentPointIndex = 0; // Start at the beginning of the new segment
+            }
+          }
+        }
+        // Handle reverse movement
+        else {
+          if (_currentPointIndex > 0) {
+            _moveAlongSegment(
+              selectedSegmentsQueue,
+              currentSegment,
+              currentSegmentIndex,
+              forward: false,
+            );
+          } else {
+            // Move to the previous segment if the current one is finished
+            currentSegmentIndex--;
+            if (currentSegmentIndex < 0) {
+              _isMoving = false;
+              timer.cancel();
+              _onPathComplete(); // Path complete handler
+            } else {
+              // Move to the previous selected segment
+              currentSegment = selectedSegmentsQueue[currentSegmentIndex];
+              _currentPointIndex = currentSegment.length - 1; // Start at the end of the new segment
+            }
+          }
+        }
+      }
+    });
+  }
+  void _moveAlongSegment(List<List<LatLng>> selectedSegmentsQueue, List<LatLng> segment, int currentSegmentIndex, {required bool forward}) {
+    LatLng start = segment[_currentPointIndex];
+    LatLng end = forward ? segment[_currentPointIndex + 1] : segment[_currentPointIndex - 1];
+
+    // Calculate segment distances
+    double segmentDistanceKM = calculateonelinedistance(start, end);
+    double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
+    segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+
+    double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+
+    // Update car's position
+    _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+    bool isSelectedSegment = _isSegmentSelected(segment, selectedSegmentsQueue, _currentPointIndex, PathDirection.horizontal);
+    distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+
+    // If this is a selected segment, track remaining distance
+    if (isSelectedSegment) {
+      totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
+      double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+      setState(() {
+        _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
+        _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+      });
+
+      if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
+        FirebaseDatabase.instance.ref().child('remainingDistance').set(_remainingDistanceKM_SelectedPath);
+      }
+    }
+
+    // Update the marker and progress through the segment
+    setState(() {
+      _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
+      _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
+      Add_Car_Marker(isSelectedSegment);
+
+      if (segmentProgress >= 1.0) {
+        _currentPointIndex += forward ? 1 : -1;
+        segmentDistanceCoveredKM = 0.0; // Reset the distance for the next segment
+      }
+    });
+
+    // End the movement if the end of the current segment is reached
+    /*if ((forward && _currentPointIndex >= segment.length - 1) || (!forward && _currentPointIndex <= 0)) {
+      _isMoving = false;
+      _movementTimer?.cancel();
+      _onPathComplete();
+    }*/
+    // End the movement if the queue is empty or the remaining distance is zero
+    if (_selectedPathsQueue.isEmpty || _remainingDistanceKM_SelectedPath <= 0) {
+      _isMoving = false;
+      _movementTimer?.cancel();
+      _onPathComplete();
+    }
+  }
+*/
 
 // Helper function to find the closest point in the path to the selected starting point
   /*int _findClosestPointIndex(List<LatLng> path, LatLng startingPoint) {
@@ -465,8 +1252,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     return closestIndex; // Return the index of the closest point
   }*/
-
-  int _findClosestPointIndex(List<LatLng> path, LatLng targetPoint) {
+  /*int _findClosestPointIndex(List<LatLng> path, LatLng targetPoint) {
     int closestPointIndex = 0;
     double closestDistance = double.infinity;
 
@@ -480,6 +1266,24 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
 
     return closestPointIndex;
+  }*/
+
+  int _findClosestPointIndex(List<LatLng> path, LatLng selectedPoint) {
+    if (path.isEmpty) return -1; // Return -1 if the path is empty
+
+    int closestIndex = 0;
+    double closestDistance = double.infinity;
+
+    for (int i = 0; i < path.length; i++) {
+      double distance = calculateonelinedistance(path[i], selectedPoint);
+
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestIndex = i;
+      }
+    }
+
+    return closestIndex;
   }
 
   void Selecting_Path_Direction_and_Turn() {
@@ -567,7 +1371,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               setState(() {
                                 _selectedDirection = value!;
                                 _isHorizontalDirection =
-                                (value == PathDirection.horizontal);
+                                    (value == PathDirection.horizontal);
                               });
                             },
                           ),
@@ -586,7 +1390,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               setState(() {
                                 _selectedDirection = value!;
                                 _isHorizontalDirection =
-                                (value == PathDirection.horizontal);
+                                    (value == PathDirection.horizontal);
                               });
                             },
                           ),
@@ -622,8 +1426,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       value: _selectedStartingPoint,
                       isExpanded: true,
                       items: (_isCustomMode
-                          ? _markers
-                          : _markers.sublist(0, _markers.length - 1))
+                              ? _markers
+                              : _markers.sublist(0, _markers.length - 1))
                           .map((marker) {
                         return DropdownMenuItem<LatLng>(
                           value: marker.position,
@@ -644,14 +1448,14 @@ class _Fetch_InputState extends State<Fetch_Input> {
                             if (marker.markerId == _selectedMarkerId) {
                               return marker.copyWith(
                                 iconParam:
-                                BitmapDescriptor.defaultMarkerWithHue(
-                                    BitmapDescriptor.hueGreen),
+                                    BitmapDescriptor.defaultMarkerWithHue(
+                                        BitmapDescriptor.hueGreen),
                               );
                             } else {
                               return marker.copyWith(
                                 iconParam:
-                                BitmapDescriptor.defaultMarkerWithHue(
-                                    BitmapDescriptor.hueAzure),
+                                    BitmapDescriptor.defaultMarkerWithHue(
+                                        BitmapDescriptor.hueAzure),
                               );
                             }
                           }).toList();
@@ -722,6 +1526,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
+
   void _onPathComplete() {
     // Clear all paths and stop movement
     setState(() {
@@ -740,8 +1545,10 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error capturing screenshot: $e');
     });
   }
+
 // Check if the current segment is part of the selected route
-  bool _isSegmentSelected(List<LatLng> path,List<List<LatLng>> selectedSegments, int index, PathDirection direction) {
+  bool _isSegmentSelected(List<LatLng> path,
+      List<List<LatLng>> selectedSegments, int index, PathDirection direction) {
     if (index < path.length - 1) {
       LatLng start = path[index];
       LatLng end = path[index + 1];
@@ -760,6 +1567,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     return false;
   }
+
   Future<void> _loadCarIcons() async {
     // Load the image from your assets
     const ImageConfiguration imageConfiguration = ImageConfiguration(
@@ -776,6 +1584,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       //'images/ugv_active.png', // Replace with your actual asset path
     );
   }
+
   Future<void> Add_Car_Marker(bool isSelectedSegment) async {
     setState(() {
       _markers.add(Marker(
@@ -787,36 +1596,39 @@ class _Fetch_InputState extends State<Fetch_Input> {
       ));
     });
   }
+
 // Check if two horizontal segments are equal
   bool _isHorizontalSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
     return (segment1[0].latitude == segment2[0].latitude &&
-        segment1[1].latitude == segment2[1].latitude &&
-        (segment1[0].longitude == segment2[0].longitude &&
-            segment1[1].longitude == segment2[1].longitude ||
-            segment1[0].longitude == segment2[1].longitude &&
-                segment1[1].longitude == segment2[0].longitude)) ||
+            segment1[1].latitude == segment2[1].latitude &&
+            (segment1[0].longitude == segment2[0].longitude &&
+                    segment1[1].longitude == segment2[1].longitude ||
+                segment1[0].longitude == segment2[1].longitude &&
+                    segment1[1].longitude == segment2[0].longitude)) ||
         (segment1[0].latitude == segment2[1].latitude &&
             segment1[1].latitude == segment2[0].latitude &&
             (segment1[0].longitude == segment2[0].longitude &&
-                segment1[1].longitude == segment2[1].longitude ||
+                    segment1[1].longitude == segment2[1].longitude ||
                 segment1[0].longitude == segment2[1].longitude &&
                     segment1[1].longitude == segment2[0].longitude));
   }
+
 // Check if two vertical segments are equal
   bool _isVerticalSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
     return (segment1[0].longitude == segment2[0].longitude &&
-        segment1[1].longitude == segment2[1].longitude &&
-        (segment1[0].latitude == segment2[0].latitude &&
-            segment1[1].latitude == segment2[1].latitude ||
-            segment1[0].latitude == segment2[1].latitude &&
-                segment1[1].latitude == segment2[0].latitude)) ||
+            segment1[1].longitude == segment2[1].longitude &&
+            (segment1[0].latitude == segment2[0].latitude &&
+                    segment1[1].latitude == segment2[1].latitude ||
+                segment1[0].latitude == segment2[1].latitude &&
+                    segment1[1].latitude == segment2[0].latitude)) ||
         (segment1[0].longitude == segment2[1].longitude &&
             segment1[1].longitude == segment2[0].longitude &&
             (segment1[0].latitude == segment2[0].latitude &&
-                segment1[1].latitude == segment2[1].latitude ||
+                    segment1[1].latitude == segment2[1].latitude ||
                 segment1[0].latitude == segment2[1].latitude &&
                     segment1[1].latitude == segment2[0].latitude));
   }
+
   void ShowSuccessDialog(Uint8List screenshotBytes) {
     showDialog(
       context: context,
@@ -868,7 +1680,10 @@ class _Fetch_InputState extends State<Fetch_Input> {
                 Navigator.of(context).pop(); // Close the dialog
                 Navigator.pushReplacement(
                   context,
-                  MaterialPageRoute(builder: (context) => const MyHomePage()),
+                  MaterialPageRoute(
+                      builder: (context) => const MyHomePage(
+                            deviceId: '',
+                          )),
                 );
               },
               child: Row(
@@ -893,6 +1708,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
+
   void setup_hardware() {
     showDialog(
       context: context,
@@ -987,7 +1803,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: Colors.indigo[
-                          800], // Indigo color for the file source value
+                              800], // Indigo color for the file source value
                         ),
                       ),
                     ],
@@ -1007,12 +1823,12 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       ),
                       TextSpan(
                         text:
-                        _selectedLocalFile ?? _selectedCloudFile ?? 'None',
+                            _selectedLocalFile ?? _selectedCloudFile ?? 'None',
                         style: GoogleFonts.poppins(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: Colors.indigo[
-                          800], // Indigo color for the selected file value
+                              800], // Indigo color for the selected file value
                         ),
                       ),
                     ],
@@ -1037,7 +1853,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: Colors.indigo[
-                          800], // Indigo color for the turn length value
+                              800], // Indigo color for the turn length value
                         ),
                       ),
                     ],
@@ -1063,7 +1879,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: Colors.indigo[
-                          800], // Indigo color for the path direction value
+                              800], // Indigo color for the path direction value
                         ),
                       ),
                     ],
@@ -1089,7 +1905,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
                           color: Colors.indigo[
-                          800], // Indigo color for the starting point value
+                              800], // Indigo color for the starting point value
                         ),
                       ),
                     ],
@@ -1181,6 +1997,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
+
   void _showHorizontalRoutesDialog() {
     List<int> selectedSegments = [];
 
@@ -1234,7 +2051,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           // Select all routes
                           selectedSegments = List.generate(
                             _dronepath.length ~/ 2,
-                                (i) => i,
+                            (i) => i,
                           );
                         });
                       },
@@ -1287,15 +2104,10 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         ),
                       ),
                       onPressed: () {
-
-
-                        if (selectedSegments.isEmpty)
-                        {
+                        if (selectedSegments.isEmpty) {
                           _showWarningDialog(context);
                           return;
-                        }
-                        else
-                        {
+                        } else {
                           Navigator.of(context).pop();
                         }
 
@@ -1310,7 +2122,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           );
                           selectedPaths.add(segment);
                           double segmentDistance =
-                          calculate_selcted_segemnt_distance(segment);
+                              calculate_selcted_segemnt_distance(segment);
                           totalDistance += segmentDistance;
                         }
 
@@ -1324,20 +2136,35 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         setState(() {
                           _selectedPathsQueue.clear();
                           _selectedPathsQueue.addAll(selectedPaths);
-
+                          _isCustomMode = false;
                           // Update polyline colors
                           _updatePolylineColors(selectedSegments);
                         });
+
+                        // Ensure that the selected segments are passed to the _startMovement_UAV function
                         if (!_isMoving) {
-                          if (widget.isManualControl) {
-                            // Call manual movement function if manual control is enabled
-                            _startManualMovement(_dronepath, _selectedPathsQueue);
+                          if (widget.groundMode) {
+                            if (widget.isManualControl) {
+                              // Call manual movement function for UGV if manual control is enabled
+                              _startManualMovement_UGV(
+                                  _dronepath, _selectedPathsQueue,
+                                  forward: true);
+                            } else {
+                              // Call the default movement function for UGV otherwise
+                              _startMovement_UGV(
+                                  _dronepath, _selectedPathsQueue);
+                            }
                           } else {
-                            // Call the default movement function otherwise
-                            _startMovement(_dronepath, _selectedPathsQueue);
+                            if (widget.isManualControl) {
+                              // Call manual movement function if manual control is enabled
+                              _startManualMovement_UAV(_selectedPathsQueue,
+                                  forward: true);
+                            } else {
+                              // Call the default movement function otherwise
+                              _startMovement_UAV(_selectedPathsQueue);
+                            }
                           }
                         }
-
                       },
                       child: Text(
                         'Start Spraying',
@@ -1357,6 +2184,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
+
   void _showVerticalRoutesDialog() {
     List<int> selectedSegments = [];
     List<List<LatLng>> verticalPaths = _allPaths;
@@ -1410,7 +2238,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         setState(() {
                           selectedSegments = List.generate(
                             verticalPaths.length,
-                                (i) => i,
+                            (i) => i,
                           );
                         });
                       },
@@ -1466,11 +2294,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         if (selectedSegments.isEmpty) {
                           _showWarningDialog(context);
                           return;
-
-                        }
-                        else{
+                        } else {
                           Navigator.of(context).pop();
-
                         }
 
                         List<List<LatLng>> selectedPaths = [];
@@ -1479,8 +2304,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         for (int index in selectedSegments) {
                           selectedPaths.add(verticalPaths[index]);
                           double segmentDistance =
-                          calculate_selcted_segemnt_distance(
-                              verticalPaths[index]);
+                              calculate_selcted_segemnt_distance(
+                                  verticalPaths[index]);
                           totalDistance += segmentDistance;
                         }
 
@@ -1501,15 +2326,25 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         });
 
                         if (!_isMoving) {
-                          if (widget.isManualControl) {
-                            // Call manual movement function if manual control is enabled
-                            _startManualMovement(_dronepath, _selectedPathsQueue);
+                          if (widget.groundMode) {
+                            if (widget.isManualControl) {
+                              // Call manual movement function for UGV if manual control is enabled
+                              //  _startManualMovement_UGV(_dronepath, _selectedPathsQueue, forward: true);
+                            } else {
+                              // Call the default movement function for UGV otherwise
+                              //  _startMovement_UGV(_dronepath, _selectedPathsQueue);
+                            }
                           } else {
-                            // Call the default movement function otherwise
-                            _startMovement(_dronepath, _selectedPathsQueue);
+                            if (widget.isManualControl) {
+                              // Call manual movement function if manual control is enabled
+                              _startManualMovement_UAV(_selectedPathsQueue,
+                                  forward: true);
+                            } else {
+                              // Call the default movement function otherwise
+                              _startMovement_UAV(_selectedPathsQueue);
+                            }
                           }
                         }
-
                       },
                       child: Text(
                         'Start Spraying',
@@ -1529,17 +2364,19 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
-  void _updatePolylineColors(List<int> selectedSegments, {bool isVertical = false}) {
+
+  void _updatePolylineColors(List<int> selectedSegments,
+      {bool isVertical = false}) {
     setState(() {
       // Update horizontal paths
       if (!isVertical) {
         _polylines.removeWhere(
-                (polyline) => polyline.polylineId.value == 'dronepath');
+            (polyline) => polyline.polylineId.value == 'dronepath');
         for (int i = 0; i < _dronepath.length ~/ 2; i++) {
           int startIndex = i * 2;
           List<LatLng> segment = _dronepath.sublist(startIndex, startIndex + 2);
           Color color =
-          selectedSegments.contains(i) ? Colors.green : Colors.red;
+              selectedSegments.contains(i) ? Colors.green : Colors.red;
           _polylines.add(Polyline(
             polylineId: PolylineId('dronepath_$i'),
             points: segment,
@@ -1550,11 +2387,11 @@ class _Fetch_InputState extends State<Fetch_Input> {
       } else {
         // Update vertical paths
         _polylines.removeWhere(
-                (polyline) => polyline.polylineId.value == 'verticalpath');
+            (polyline) => polyline.polylineId.value == 'verticalpath');
         for (int i = 0; i < _allPaths.length; i++) {
           List<LatLng> segment = _allPaths[i];
           Color color =
-          selectedSegments.contains(i) ? Colors.green : Colors.red;
+              selectedSegments.contains(i) ? Colors.green : Colors.red;
           _polylines.add(Polyline(
             polylineId: PolylineId('verticalpath_$i'),
             points: segment,
@@ -1565,6 +2402,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     });
   }
+
   // Warning dialog when no routes are selected
   void _showWarningDialog(BuildContext context) {
     showDialog(
@@ -1606,7 +2444,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
-  void dronepath_Horizontal(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
+
+  void dronepath_Horizontal(
+      List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
 
     List<LatLng> sortedByLat = List.from(polygon)
@@ -1650,8 +2490,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
 
     for (double lat = startLat - latIncrement;
-    lat >= minLat;
-    lat -= latIncrement) {
+        lat >= minLat;
+        lat -= latIncrement) {
       List<LatLng> intersections = [];
       for (int i = 0; i < polygon.length; i++) {
         LatLng p1 = polygon[i];
@@ -1675,7 +2515,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
 
     List<LatLng> dronePath =
-    straightPaths.expand((segment) => segment).toList();
+        straightPaths.expand((segment) => segment).toList();
     dronePath.insert(0, startPoint);
 
     double totalDistancezigzagKm = _calculateTotalDistanceZIGAG(dronePath);
@@ -1697,7 +2537,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
       totalZigzagPathKm = totalDistancezigzagKm;
     });
   }
-  void dronepath_Vertical(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
+
+  void dronepath_Vertical(
+      List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
 
     List<LatLng> sortedByLng = List.from(polygon)
@@ -1737,8 +2579,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
 
     for (double lng = startLng - lngIncrement;
-    lng >= minLng;
-    lng -= lngIncrement) {
+        lng >= minLng;
+        lng -= lngIncrement) {
       List<LatLng> intersections = [];
       for (int i = 0; i < polygon.length; i++) {
         LatLng p1 = polygon[i];
@@ -1762,7 +2604,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
 
     List<LatLng> dronePath =
-    straightPaths.expand((segment) => segment).toList();
+        straightPaths.expand((segment) => segment).toList();
     dronePath.insert(0, startPoint);
 
     double totalDistancezigzagKm = _calculateTotalDistanceZIGAG(dronePath);
@@ -1782,12 +2624,14 @@ class _Fetch_InputState extends State<Fetch_Input> {
       totalZigzagPathKm = totalDistancezigzagKm;
     });
   }
+
 // Extracting LatLng points from markers
   void extractLatLngPoints() {
     if (polygons.isNotEmpty) {
       polygonPoints = polygons.first.points.toList();
     }
   }
+
   Future<void> _closePolygon(double turnLength) async {
     setState(() {
       _ismanual = true;
@@ -1799,6 +2643,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
         strokeWidth: 5,
         fillColor: Colors.blue.withOpacity(0.2),
       ));
+
+      _showSnackbar_connection(
+          context, 'You are now connected with the Satellite');
     });
 
     if (_selectedDirection == PathDirection.horizontal) {
@@ -1817,6 +2664,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     }
   }
+
   Future<void> _requestLocationPermission() async {
     bool _serviceEnabled;
     PermissionStatus _permissionGranted;
@@ -1837,6 +2685,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     _currentLocation = await _location.getLocation();
     setState(() {});
   }
+
   void _initializeFirebaseListener() {
     _latRef = FirebaseDatabase.instance.ref().child('Current_Lat');
     _longRef = FirebaseDatabase.instance.ref().child('Current_Long');
@@ -1854,14 +2703,17 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     });
   }
+
   void _updateMarkerPosition(double lat, double long) {
     setState(() {
       _currentPosition = LatLng(lat, long);
     });
   }
+
   void _hideKeyboard() {
     FocusScope.of(context).previousFocus();
   }
+
   void _showInputSelectionPopup() {
     showModalBottomSheet(
       context: context,
@@ -1919,7 +2771,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                   _isCustomMode = true;
                   // _ismanual = true;
                   _selectedMethod =
-                  'Placing Markers Manually'; // Store selection
+                      'Placing Markers Manually'; // Store selection
                 });
                 Navigator.pop(context);
               },
@@ -1962,7 +2814,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
               onPressed: () {
                 setState(() {
                   _selectedMethod =
-                  'Load Coordinates From KML'; // Store selection
+                      'Load Coordinates From KML'; // Store selection
                 });
                 Navigator.pop(context);
                 _showFileSelectionPopup();
@@ -1982,6 +2834,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
+
   Future<void> _showFileSelectionPopup() async {
     List<String> cloudFiles = await _fetchCloudFiles(); // Get list of cloud files
 
@@ -2034,7 +2887,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           setState(() {
                             _selectedFileSource = value;
                             _selectedLocalFile = null;
-                            _selectedCloudFile = null; // Reset the other selection
+                            _selectedCloudFile =
+                                null; // Reset the other selection
                           });
                         },
                       ),
@@ -2064,20 +2918,27 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       ),
                       onPressed: () async {
                         // Open the file picker
-                        FilePickerResult? result = await FilePicker.platform.pickFiles(
+                        FilePickerResult? result =
+                            await FilePicker.platform.pickFiles(
                           type: FileType.custom,
-                          allowedExtensions: ['txt', 'kml'], // Only allow .txt and .kml files
+                          allowedExtensions: [
+                            'txt',
+                            'kml'
+                          ], // Only allow .txt and .kml files
                         );
 
                         // Check if the user selected a file
                         if (result != null) {
                           // Get the full file path and the file name
                           String filePath = result.files.single.path!;
-                          String fileName = path.basename(filePath); // Extract just the file name
+                          String fileName = path
+                              .basename(filePath); // Extract just the file name
 
                           setState(() {
-                            _selectedLocalFilePath = filePath; // Store the full file path
-                            _selectedLocalFile = fileName; // Store the file name to display in UI
+                            _selectedLocalFilePath =
+                                filePath; // Store the full file path
+                            _selectedLocalFile =
+                                fileName; // Store the file name to display in UI
                           });
 
                           // Do not call _loadMarkersFromFile here
@@ -2104,7 +2965,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                           setState(() {
                             _selectedFileSource = value;
                             _selectedLocalFile = null;
-                            _selectedCloudFile = null; // Reset the other selection
+                            _selectedCloudFile = null;
+                            _fetchCloudFiles(); // Fetch cloud files when selected
                           });
                         },
                       ),
@@ -2118,42 +2980,54 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       ),
                       const SizedBox(width: 5),
                       Image.asset(
-                        'images/cloud.png', // replace with your image asset path
+                        'images/cloud.png',
                         width: 40,
                         height: 40,
                       ),
                     ],
                   ),
                   if (_selectedFileSource == 'Cloud')
-                    Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.indigo),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: DropdownButton<String>(
-                        hint: Text(
-                          'Choose File',
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.black45,
-                          ),
+                    GestureDetector(
+                      onTap: () {
+                        if (cloudFiles.isEmpty) {
+                          // If no cloud files available, show a warning
+                        }
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.indigo),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        value: _selectedCloudFile,
-                        isExpanded: true,
-                        underline: SizedBox(),
-                        onChanged: (String? newValue) {
-                          setState(() {
-                            _selectedCloudFile = newValue;
-                          });
-                        },
-                        items: cloudFiles.map<DropdownMenuItem<String>>((String file) {
-                          return DropdownMenuItem<String>(
-                            value: file,
-                            child: Text(file),
-                          );
-                        }).toList(),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: DropdownButton<String>(
+                          hint: Text(
+                            'Choose File',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.black45,
+                            ),
+                          ),
+                          value: _selectedCloudFile,
+                          isExpanded: true,
+                          underline: SizedBox(),
+                          onChanged: cloudFiles.isNotEmpty
+                              ? (String? newValue) {
+                                  setState(() {
+                                    _selectedCloudFile = newValue;
+                                  });
+                                }
+                              : null, // Disable the dropdown if no files
+                          items: cloudFiles.isNotEmpty
+                              ? cloudFiles
+                                  .map<DropdownMenuItem<String>>((String file) {
+                                  return DropdownMenuItem<String>(
+                                    value: file,
+                                    child: Text(file),
+                                  );
+                                }).toList()
+                              : null,
+                        ),
                       ),
                     ),
                 ],
@@ -2170,14 +3044,14 @@ class _Fetch_InputState extends State<Fetch_Input> {
               ),
               onPressed: () {
                 if (_selectedLocalFile != null || _selectedCloudFile != null) {
-                  Navigator.pop(context);
                   if (_selectedLocalFile != null) {
-                    // Call _loadMarkersFromFile only here
                     _loadMarkersFromFile(_selectedLocalFilePath!);
                   } else if (_selectedCloudFile != null) {
-                    // Call _loadMarkersFromCloudFile only here
                     _loadMarkersFromCloudFile(_selectedCloudFile!);
                   }
+                  Navigator.pop(context);
+                } else {
+                  _showSnackbar(context, 'Please Select At least One file from Local Or Cloud Source');
                 }
               },
               child: Text(
@@ -2189,6 +3063,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
                 ),
               ),
             ),
+
+
+
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.indigo[800],
@@ -2198,6 +3075,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
               ),
               onPressed: () {
                 Navigator.pop(context);
+
               },
               child: Text(
                 'Cancel',
@@ -2213,6 +3091,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       },
     );
   }
+
   Future<void> _loadMarkersFromCloudFile(String fileName) async {
     try {
       final Reference fileRef = FirebaseStorage.instance.ref().child(fileName);
@@ -2226,11 +3105,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
         _markerPositions.clear();
 
         // Use regex to extract content inside <coordinates> tags
-        final RegExp coordRegExp = RegExp(r'<coordinates>(.*?)<\/coordinates>', dotAll: true);
+        final RegExp coordRegExp =
+            RegExp(r'<coordinates>(.*?)<\/coordinates>', dotAll: true);
         final Iterable<RegExpMatch> matches = coordRegExp.allMatches(contents);
-
-        bool restrictedAreaFound = false; // Flag for restricted area
-
         for (var match in matches) {
           final String coordinateData = match.group(1)!.trim();
           final coordinatePairs = coordinateData.split(RegExp(r'\s+'));
@@ -2242,38 +3119,26 @@ class _Fetch_InputState extends State<Fetch_Input> {
               final lat = double.parse(parts[1].trim());
               final latLng = LatLng(lat, lng);
 
-              // Check if the LatLng falls in a restricted building area
-              if (_isLatLngInRestrictedArea(latLng)) {
-                restrictedAreaFound = true;
-                break;
-              }
-
               // Create marker only if not in restricted area
               final markerId = MarkerId('M${_markers.length + 1}');
               final newMarker = Marker(
                 markerId: markerId,
                 position: latLng,
-                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+                icon: BitmapDescriptor.defaultMarkerWithHue(
+                    BitmapDescriptor.hueAzure),
               );
 
               _markers.add(newMarker);
               _markerPositions.add(latLng);
             }
           }
-
-          if (restrictedAreaFound) break;
         }
 
-        if (restrictedAreaFound) {
-          _showRestrictedAreaSnackbar(context, 'KML file Have restricted markers on building areas,PLease choose another File'); // Show snackbar if restricted area is found
-        } else {
-          // Update the UI if no restricted area was found
-          setState(() {
-            _updatePolylines();
-            _updateRouteData();
-            animateToFirstMarker();
-          });
-        }
+        setState(() {
+          _updatePolylines();
+          _updateRouteData();
+          animateToFirstMarker();
+        });
       } else {
         print('Error fetching cloud file: ${response.statusCode}');
       }
@@ -2281,6 +3146,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error loading markers from cloud file: $e');
     }
   }
+
 //Widget to make a button which will trigger the functions SELECTING_PATH_AND_DIRECTION()
   Future<void> _loadMarkersFromFile(String filePath) async {
     try {
@@ -2290,7 +3156,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
       _markers.clear();
       _markerPositions.clear();
 
-      final RegExp coordRegExp = RegExp(r'<coordinates>(.*?)<\/coordinates>', dotAll: true);
+      final RegExp coordRegExp =
+          RegExp(r'<coordinates>(.*?)<\/coordinates>', dotAll: true);
       final Iterable<RegExpMatch> matches = coordRegExp.allMatches(contents);
 
       bool restrictedAreaFound = false; // Flag for restricted area
@@ -2306,18 +3173,15 @@ class _Fetch_InputState extends State<Fetch_Input> {
             final lat = double.parse(parts[1].trim());
             final latLng = LatLng(lat, lng);
 
-            // Check if the LatLng falls in a restricted building area
-            if (_isLatLngInRestrictedArea(latLng)) {
-              restrictedAreaFound = true;
-              break;
-            }
+            // Check if the LatLng falls in a restricted Field area
 
             // Create marker only if not in restricted area
             final markerId = MarkerId('M${_markers.length + 1}');
             final newMarker = Marker(
               markerId: markerId,
               position: latLng,
-              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+              icon: BitmapDescriptor.defaultMarkerWithHue(
+                  BitmapDescriptor.hueAzure),
             );
 
             _markers.add(newMarker);
@@ -2325,32 +3189,25 @@ class _Fetch_InputState extends State<Fetch_Input> {
           }
         }
 
-        if (restrictedAreaFound) break;
+        //  if (restrictedAreaFound) break;
       }
 
-      if (restrictedAreaFound) {
-        _showRestrictedAreaSnackbar(context, 'KML file Have restricted markers on building areas,PLease choose another File'); // Show snackbar if restricted area is found
+      /* if (restrictedAreaFound) {
+        _showRestrictedAreaSnackbar(context, 'KML file Have restricted markers on Field areas,PLease choose another File'); // Show snackbar if restricted area is found
       } else {
         // Update the UI if no restricted area was found
-        setState(() {
-          _updatePolylines();
-          _updateRouteData();
-          animateToFirstMarker();
-        });
-      }
+
+      } */
+      setState(() {
+        _updatePolylines();
+        _updateRouteData();
+        animateToFirstMarker();
+      });
     } catch (e) {
       print("Error reading file: $e");
     }
   }
-  bool _isLatLngInRestrictedArea(LatLng point) {
-    for (var polygon in _buildingPolygons) {
-      if (_isPointInPolygon(point, polygon.points)) {
-        return true; // Point is in restricted area
-      }
-    }
-    return false;
-  }
-// Function to fetch files from Firebase Storage
+
   Future<List<String>> _fetchCloudFiles() async {
     List<String> fileNames = [];
     try {
@@ -2363,6 +3220,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
     }
     return fileNames;
   }
+// Ensure this method is called when "Cloud" is selected
+
   void _updatePolylines() {
     _polylines.clear();
 
@@ -2381,7 +3240,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       if (_markerPositions.first == _markerPositions.last) {
         setState(() {
           _isShapeClosed =
-          true; // Set the boolean to true if the shape is closed
+              true; // Set the boolean to true if the shape is closed
         });
       } else {
         setState(() {
@@ -2391,231 +3250,17 @@ class _Fetch_InputState extends State<Fetch_Input> {
     } else {
       setState(() {
         _isShapeClosed =
-        false; // If fewer than 2 markers, the shape cannot be closed
+            false; // If fewer than 2 markers, the shape cannot be closed
       });
     }
-  }
-
-
-
-
-
-
-  void _startManualMovement(List<LatLng> path, List<List<LatLng>> selectedSegments) {
-    if (path.isEmpty || _selectedStartingPoint == null) {
-      print("Path is empty or starting point not selected, cannot start movement");
-      return;
-    }
-
-    // Find the nearest point on the path to the selected starting point
-    int startingPointIndex = _findClosestPointIndex(path, _selectedStartingPoint!);
-
-    // Set the car's initial position to the selected starting point
-    setState(() {
-      _isMoving=false;
-      _carPosition = path[startingPointIndex]; // Start from the closest point
-      _currentPointIndex = startingPointIndex;
-    });
-
-    // Decide the direction-specific marker function
-    Add_Car_Marker(_isSegmentSelected(
-        path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
-
-    // Initialize movement variables
-
-
-    // Initialize movement direction
-    bool movingForward = true;
-
-    // Start listening to controller button presses
-    _controllerButtonListener = () {
-      if (_isbackwardPressed) {
-        _moveBackward(path, selectedSegments);
-      } else if (_isforwardPressed) {
-        _moveForward(path, selectedSegments);
-      } 
-      /*else if (_isLeftPressed) {
-        _moveLeft(path, selectedSegments);
-      } else if (_isRightPressed) {
-        _moveRight(path, selectedSegments);
-      }*/
-      else if (_isStop) {
-        _isStop=true;
-        _stopMovement();
-      }
-    };
-  }
-
-  void _moveBackward(List<LatLng> path, List<List<LatLng>> selectedSegments) {
-    if (_currentPointIndex > 0) {
-      LatLng end = path[_currentPointIndex]; // Current point (end for reverse movement)
-      LatLng start = path[_currentPointIndex - 1]; // Previous point (start for reverse movement)
-      double segmentDistanceKM = calculateonelinedistance(start, end);
-      double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
-
-      // Continue from the previously covered segment distance without resetting it
-      segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-
-      // Calculate reverse progress, continuing from where the forward movement stopped
-      double segmentProgress = 1.0 - (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
-      _carPosition = _lerpLatLng(end, start, segmentProgress); // Reverse interpolation
-
-      bool isSelectedSegment = _isSegmentSelected(
-        path,
-        selectedSegments,
-        _currentPointIndex - 1,
-        PathDirection.horizontal,
-      );
-
-      distanceCoveredInWholeJourney -= distanceCoveredInThisTickKM; // Subtract distance since moving backward
-
-      if (isSelectedSegment) {
-        totalDistanceCoveredKM_SelectedPath -= distanceCoveredInThisTickKM; // Subtract distance for selected path
-        double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
-        setState(() {
-          _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
-          _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
-        });
-
-        if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
-          FirebaseDatabase.instance.ref().child('remainingDistance').set(_remainingDistanceKM_SelectedPath);
-        }
-      }
-
-      setState(() {
-        _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
-      });
-
-      // Update car marker position
-      setState(() {
-        _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
-        Add_Car_Marker(isSelectedSegment);
-
-        if (segmentProgress <= 0.0) { // We are done with this segment and need to move to the previous one
-          _currentPointIndex--; // Move to the previous segment
-          segmentDistanceCoveredKM = 0.0; // Reset the segment distance for the next segment
-        }
-      });
-    }
-  }
-
-
-  void _moveForward(List<LatLng> path, List<List<LatLng>> selectedSegments) {
-    if (_currentPointIndex < path.length - 1) {
-      LatLng start = path[_currentPointIndex]; // Current point (start for forward movement)
-      LatLng end = path[_currentPointIndex + 1]; // Next point (end for forward movement)
-      double segmentDistanceKM = calculateonelinedistance(start, end);
-      double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
-      segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-
-      // Calculate forward progress (moving from start to end)
-      double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
-      _carPosition = _lerpLatLng(start, end, segmentProgress); // Forward interpolation
-
-      bool isSelectedSegment = _isSegmentSelected(
-        path,
-        selectedSegments,
-        _currentPointIndex,
-        PathDirection.horizontal,
-      );
-
-      distanceCoveredInWholeJourney += distanceCoveredInThisTickKM; // Add distance for forward movement
-
-      if (isSelectedSegment) {
-        totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
-        double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
-        setState(() {
-          _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
-          _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
-        });
-
-        if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
-          FirebaseDatabase.instance.ref().child('remainingDistance').set(_remainingDistanceKM_SelectedPath);
-        }
-      }
-
-      setState(() {
-        _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
-      });
-
-      // Update car marker position
-      setState(() {
-        _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
-        Add_Car_Marker(isSelectedSegment);
-
-        if (segmentProgress >= 1.0) {
-          _currentPointIndex++; // Move to the next segment
-          segmentDistanceCoveredKM = 0.0; // Reset the segment distance for the next segment
-        }
-      });
-    }
-  }
-  bool _isStraightLine(List<LatLng> path, int index) {
-    if (index <= 0 || index >= path.length - 1) return false;
-
-    LatLng prev = path[index - 1];
-    LatLng current = path[index];
-    LatLng next = path[index + 1];
-
-    double dx1 = current.longitude - prev.longitude;
-    double dy1 = current.latitude - prev.latitude;
-    double dx2 = next.longitude - current.longitude;
-    double dy2 = next.latitude - current.latitude;
-
-    // Check if both vectors have the same direction (indicating a straight line)
-    return (dx1 * dy2 - dy1 * dx2).abs() < 0.0001; // Small tolerance for floating point errors
-  }
-
-  /*void _moveLeft(List<LatLng> path, List<List<LatLng>> selectedSegments) {
-    if (_currentPointIndex > 0 && !_isStraightLine(path, _currentPointIndex)) {
-      int newIndex = _currentPointIndex - 1;
-      while (newIndex >= 0 && !_isSegmentSelected(path, selectedSegments, newIndex, PathDirection.horizontal)) {
-        newIndex--;
-      }
-      if (newIndex >= 0) {
-        _carPosition = _lerpLatLng(path[_currentPointIndex], path[newIndex], 0.5); // Smaller interpolation step
-        _currentPointIndex = newIndex;
-        setState(() {
-          _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
-          Add_Car_Marker(_isSegmentSelected(path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
-        });
-      }
-    }
-  }
-
-  void _moveRight(List<LatLng> path, List<List<LatLng>> selectedSegments) {
-    if (_currentPointIndex < path.length - 1 && !_isStraightLine(path, _currentPointIndex)) {
-      int newIndex = _currentPointIndex + 1;
-      while (newIndex < path.length && !_isSegmentSelected(path, selectedSegments, newIndex, PathDirection.horizontal)) {
-        newIndex++;
-      }
-      if (newIndex < path.length) {
-        _carPosition = _lerpLatLng(path[_currentPointIndex], path[newIndex], 0.00005); // Smaller interpolation step
-        _currentPointIndex = newIndex;
-        setState(() {
-          _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
-          Add_Car_Marker(_isSegmentSelected(path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
-        });
-      }
-    }
-  }
-*/
-  void ManualStartMovement(void Function() moveFunction) {
-    _movementTimer?.cancel(); // Cancel any existing timer
-    _movementTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      moveFunction();
-    });
   }
 
   void _stopMovement() {
-    _movementTimer?.cancel(); // Stop the timer when button is released
-    _movementTimer = null;
-    _isMoving = false;
+    setState(() {
+      _isMoving = false;
+      _movementTimer?.cancel();
+    });
   }
-
-
-
-
 
 //UI BUILD
   @override
@@ -2632,22 +3277,20 @@ class _Fetch_InputState extends State<Fetch_Input> {
           ),
         ),
         backgroundColor: Colors.indigo[800],
-        toolbarHeight: 160, // Custom height for the AppBar
+        toolbarHeight: 170, // Increased height to accommodate marquee
         flexibleSpace: Padding(
-          padding: const EdgeInsets.fromLTRB(
-              10, 30, 10, 0), // Padding to control spacing
+          padding: const EdgeInsets.fromLTRB(10, 30, 10, 0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               // First Row: Logo, Title, Notification Icon, Three Dots Icon
               Container(
                 decoration: BoxDecoration(
-                  color: Colors.white, // Set the background color to white
-                  borderRadius: BorderRadius.circular(
-                      15), // Make the background rounded (capsule effect)
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(15),
                   boxShadow: const [
                     BoxShadow(
-                      color: Colors.black12, // Optional shadow for better look
+                      color: Colors.black12,
                       blurRadius: 10,
                       offset: Offset(0, 4),
                     ),
@@ -2662,8 +3305,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       height: 50,
                       decoration: const BoxDecoration(
                         shape: BoxShape.circle,
-                        color:
-                        Colors.white, // Set the background color to white
+                        color: Colors.white,
                       ),
                       child: Padding(
                         padding: const EdgeInsets.all(1),
@@ -2681,8 +3323,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                         Text(
                           "LIMS",
                           style: TextStyle(
-                            color: Colors
-                                .black, // Changed text color to black to be visible on white background
+                            color: Colors.black,
                             fontSize: 20,
                             fontWeight: FontWeight.w500,
                             fontFamily: GoogleFonts.poppins().fontFamily,
@@ -2713,10 +3354,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 fontFamily: GoogleFonts.poppins().fontFamily,
                               ),
                             ),
-                            const SizedBox(
-                                width:
-                                2), // Reduced spacing between icon and text
-
+                            const SizedBox(width: 2),
                             IconButton(
                               icon: const Icon(
                                 Icons.logout_outlined,
@@ -2724,19 +3362,17 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 size: 25,
                               ),
                               onPressed: () async {
-                                context.read<ISSAASProvider>().setIsSaas(
-                                    false); // Set ISSAAS state to true
+                                context.read<ISSAASProvider>().setIsSaas(false);
 
                                 try {
                                   await FirebaseAuth.instance.signOut();
                                   Navigator.pushReplacement(
                                     context,
                                     MaterialPageRoute(
-                                        builder: (context) =>
-                                            LoginScreen()), // Adjust the navigation to your Login page
+                                      builder: (context) => LoginScreen(),
+                                    ),
                                   );
                                 } catch (e) {
-                                  // Handle any errors that may occur during sign out
                                   print('Error signing out: $e');
                                 }
                               },
@@ -2748,7 +3384,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 10),
               // Second Row: UGV Connected Widget, Rawalpindi Text, Location Icon
               Row(
@@ -2778,89 +3413,118 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       );
                     }),
                   ),
-
                   widget.isManualControl
                       ? Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
-                    child: Container(
-                      padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
-                      width: 120,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.indigo[800],
-                        borderRadius:
-                        const BorderRadius.all(Radius.circular(5)),
-                      ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors
-                              .white, // Set the background color to white
-                          borderRadius: BorderRadius.circular(
-                              10), // Rounded corners
-                        ),
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 7),
-                            Center(
-                              child: Text(
-                                "Manual Mode",
-                                style: TextStyle(
-                                  color: Colors.indigo[
-                                  800], // Text color set to indigo
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 14,
-                                  fontFamily:
-                                  GoogleFonts.poppins().fontFamily,
-                                ),
+                          padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
+                          child: Container(
+                            padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
+                            width: 120,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Colors.indigo[800],
+                              borderRadius:
+                                  const BorderRadius.all(Radius.circular(5)),
+                            ),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                children: [
+                                  const SizedBox(width: 7),
+                                  Center(
+                                    child: Text(
+                                      "Manual Mode",
+                                      style: TextStyle(
+                                        color: Colors.indigo[800],
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                        fontFamily:
+                                            GoogleFonts.poppins().fontFamily,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
+                          ),
+                        )
                       : Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
-                    child: Container(
-                      padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
-                      width: 140,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.indigo[800],
-                        borderRadius:
-                        const BorderRadius.all(Radius.circular(5)),
-                      ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors
-                              .white, // Set the background color to white
-                          borderRadius: BorderRadius.circular(
-                              10), // Rounded corners
-                        ),
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 7),
-                            Center(
-                              child: Text(
-                                "Autonomous Mode",
-                                style: TextStyle(
-                                  color: Colors.indigo[
-                                  800], // Text color set to indigo
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                  fontFamily:
-                                  GoogleFonts.poppins().fontFamily,
-                                ),
+                          padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
+                          child: Container(
+                            padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
+                            width: 140,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Colors.indigo[800],
+                              borderRadius:
+                                  const BorderRadius.all(Radius.circular(5)),
+                            ),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                children: [
+                                  const SizedBox(width: 7),
+                                  Center(
+                                    child: Text(
+                                      "Autonomous Mode",
+                                      style: TextStyle(
+                                        color: Colors.indigo[800],
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        fontFamily:
+                                            GoogleFonts.poppins().fontFamily,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
-                  )
-                  // Return an empty widget if not purchased
                 ],
               ),
+              // Add Marquee if in Manual Mode
+              if (_isCustomMode) // Replace with your actual condition
+                Container(
+                  height: 40,
+                  margin: const EdgeInsets.only(top: 10),
+                  width: MediaQuery.of(context).size.width,
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade900,
+                    borderRadius: BorderRadius.circular(10),
+                  ), // Make sure it fits the screen
+                  child: ClipRect(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Transform.translate(
+                          offset: Offset(-_offset, 0),
+                          child: Row(
+                            children: [
+                              Text(
+                                'Manual Coordinate Method: DO NOT PLACE MARKER OUTSIDE THE SHADED AREA',
+                                style: TextStyle(
+                                  fontFamily: GoogleFonts.poppins().fontFamily,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              SizedBox(
+                                  width: 50), // Adding space between repeats
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -2910,11 +3574,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
             Column(children: [
               // Conditional widget loading with `Visibility`
               if (polygons.isNotEmpty)
-
                 Card(
                   color: Colors.white,
                   elevation: 8,
-
                   child: Padding(
                     padding: const EdgeInsets.all(8.0),
                     child: Column(
@@ -2936,19 +3598,22 @@ class _Fetch_InputState extends State<Fetch_Input> {
                             children: [
                               _CardItem(
                                 title: 'Area',
-                                value: '${_calculateSphericalPolygonArea(_markerPositions).toStringAsFixed(2)} ac',
+                                value:
+                                    '${_calculateSphericalPolygonArea(_markerPositions).toStringAsFixed(2)} ac',
                                 color: Colors.indigo[800]!,
                                 icon: Icons.location_on,
                               ),
                               _CardItem(
                                 title: 'Total',
-                                value: '${totalZigzagPathKm.toStringAsFixed(2)} Km',
+                                value:
+                                    '${totalZigzagPathKm.toStringAsFixed(2)} Km',
                                 color: Colors.deepPurple[800]!,
                                 icon: Icons.directions,
                               ),
                               _CardItem(
                                 title: 'Spray',
-                                value: '${_totalDistanceKM.toStringAsFixed(2)} Km',
+                                value:
+                                    '${_totalDistanceKM.toStringAsFixed(2)} Km',
                                 color: Colors.amber[900]!,
                                 icon: Icons.shower_outlined,
                               ),
@@ -2961,7 +3626,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               _CardItem(
                                 title: 'UGV',
                                 icon: Icons.speed,
-
                                 value: '10m/s',
                                 color: Colors.cyan[800]!,
                               ),
@@ -2984,24 +3648,27 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                       Row(
                                         children: [
                                           const Icon(
-                                            Icons.shower_outlined, // replace with your desired icon
+                                            Icons
+                                                .shower_outlined, // replace with your desired icon
                                             color: Colors.black87,
                                             weight: 10,
                                           ),
-                                          const SizedBox(width: 5), // space between icon and text
+                                          const SizedBox(
+                                              width:
+                                                  5), // space between icon and text
                                           Text(
                                             "Rem Spray:",
                                             style: TextStyle(
                                               color: Colors.amber[900],
                                               fontWeight: FontWeight.w600,
                                               fontSize: 14,
-                                              fontFamily: GoogleFonts.poppins().fontFamily,
+                                              fontFamily: GoogleFonts.poppins()
+                                                  .fontFamily,
                                             ),
                                           ),
                                         ],
                                       ),
                                       const SizedBox(width: 5),
-
                                       Expanded(
                                         child: Stack(
                                           alignment: Alignment.bottomLeft,
@@ -3009,32 +3676,49 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                             // The bottle image
                                             Image.asset(
                                               'images/spray.png', // Your sprayer image asset path
-                                              height: 100, // Adjust size as needed
-                                              width: 70, // Adjust size as needed
+                                              height:
+                                                  100, // Adjust size as needed
+                                              width:
+                                                  70, // Adjust size as needed
                                               fit: BoxFit.contain,
                                             ),
                                             // Remaining spray represented by a container
                                             Positioned(
-                                              bottom: 16.3, // Align with the bottom of the bottle body
-                                              left: 3.5, // Adjust left offset if necessary
+                                              bottom:
+                                                  16.3, // Align with the bottom of the bottle body
+                                              left:
+                                                  3.5, // Adjust left offset if necessary
 
                                               // Wrap the FractionallySizedBox inside a SizedBox with a fixed height
                                               child: SizedBox(
-                                                height: 42, // Adjust to fit the height of the bottle body
+                                                height:
+                                                    42, // Adjust to fit the height of the bottle body
                                                 child: FractionallySizedBox(
-                                                  alignment: Alignment.bottomLeft,
-                                                  heightFactor: (_totalDistanceKM != 0)
-                                                      ? _remainingDistanceKM_SelectedPath / _totalDistanceKM
+                                                  alignment:
+                                                      Alignment.bottomLeft,
+                                                  heightFactor: (_totalDistanceKM !=
+                                                          0)
+                                                      ? _remainingDistanceKM_SelectedPath /
+                                                          _totalDistanceKM
                                                       : 0.0, // Proportional height
                                                   child: Container(
-                                                    width: 20, // Width matching the image or as needed
+                                                    width:
+                                                        20, // Width matching the image or as needed
                                                     decoration: BoxDecoration(
-                                                      gradient: const LinearGradient(
-                                                        colors: [Colors.red, Colors.green],
-                                                        begin: Alignment.bottomCenter,
-                                                        end: Alignment.topCenter,
+                                                      gradient:
+                                                          const LinearGradient(
+                                                        colors: [
+                                                          Colors.red,
+                                                          Colors.green
+                                                        ],
+                                                        begin: Alignment
+                                                            .bottomCenter,
+                                                        end:
+                                                            Alignment.topCenter,
                                                       ),
-                                                      borderRadius: BorderRadius.circular(6), // Rounded edges for the liquid
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              6), // Rounded edges for the liquid
                                                     ),
                                                   ),
                                                 ),
@@ -3046,7 +3730,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                     ],
                                   ),
                                 ),
-                                const SizedBox(width: 2), // spacing between rows
+                                const SizedBox(
+                                    width: 2), // spacing between rows
 
                                 // Second row
                                 Expanded(
@@ -3054,11 +3739,14 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                     children: [
                                       // Watch Icon with Circular Progress Indicator
                                       const Icon(
-                                        Icons.timer_outlined, // replace with your desired icon
+                                        Icons
+                                            .timer_outlined, // replace with your desired icon
                                         color: Colors.black87,
                                         weight: 10,
                                       ),
-                                      const SizedBox(width: 5), // space between icon and text
+                                      const SizedBox(
+                                          width:
+                                              5), // space between icon and text
 
                                       // "Rem Time" Text
                                       Text(
@@ -3067,10 +3755,13 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                           color: Colors.red,
                                           fontWeight: FontWeight.w600,
                                           fontSize: 14,
-                                          fontFamily: GoogleFonts.poppins().fontFamily,
+                                          fontFamily:
+                                              GoogleFonts.poppins().fontFamily,
                                         ),
                                       ),
-                                      const SizedBox(width: 0), // Spacing between icon and text
+                                      const SizedBox(
+                                          width:
+                                              0), // Spacing between icon and text
 
                                       SizedBox(
                                         width: 60, // Adjust width as needed
@@ -3081,17 +3772,22 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                             // Watch icon image
                                             Image.asset(
                                               'images/watch.png', // Your sprayer image asset path
-                                              height: 100, // Adjust size as needed
-                                              width: 70, // Adjust size as needed
+                                              height:
+                                                  100, // Adjust size as needed
+                                              width:
+                                                  70, // Adjust size as needed
                                               fit: BoxFit.contain,
                                             ),
 
                                             // Filled circle (inside the CircularProgressIndicator)
                                             Positioned(
-                                              bottom: 18.5, // Align with the bottom of the watch body
-                                              left: 25.3, // Adjust left offset if necessary
+                                              bottom:
+                                                  18.5, // Align with the bottom of the watch body
+                                              left:
+                                                  25.3, // Adjust left offset if necessary
                                               child: SizedBox(
-                                                width: 10, // Adjust size as needed
+                                                width:
+                                                    10, // Adjust size as needed
                                                 height: 10,
                                                 child: Stack(
                                                   alignment: Alignment.center,
@@ -3100,20 +3796,28 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
                                                     // Circular progress indicator (on top of the filled circle)
                                                     CircularProgressIndicator(
-                                                      value: (TLM != null && timeduration != null && timeduration != 0)
-                                                          ? 1 - (TLM / timeduration) // Progress value based on remaining time, progressing clockwise
+                                                      value: (TLM != null &&
+                                                              timeduration !=
+                                                                  null &&
+                                                              timeduration != 0)
+                                                          ? 1 -
+                                                              (TLM /
+                                                                  timeduration) // Progress value based on remaining time, progressing clockwise
                                                           : 0.0, // No progress initially
-                                                      strokeWidth: 31, // Adjust the stroke width for the progress bar
-                                                      valueColor: const AlwaysStoppedAnimation<Color>(Colors.red), // Red progress color for the stroke
-                                                      backgroundColor: Colors.green, // Set background to transparent
+                                                      strokeWidth:
+                                                          31, // Adjust the stroke width for the progress bar
+                                                      valueColor:
+                                                          const AlwaysStoppedAnimation<
+                                                                  Color>(
+                                                              Colors
+                                                                  .red), // Red progress color for the stroke
+                                                      backgroundColor: Colors
+                                                          .green, // Set background to transparent
                                                     ),
                                                   ],
                                                 ),
                                               ),
                                             ),
-
-
-
                                           ],
                                         ),
                                       ),
@@ -3129,46 +3833,57 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 Row(
                                   children: [
                                     const Icon(
-                                      Icons.route_outlined, // replace with your desired icon
+                                      Icons
+                                          .route_outlined, // replace with your desired icon
                                       color: Colors.black87,
                                     ),
-                                    const SizedBox(width: 5), // space between icon and text
+                                    const SizedBox(
+                                        width:
+                                            5), // space between icon and text
                                     Text(
                                       "Rem Dis:",
                                       style: TextStyle(
                                         color: Colors.indigo[800],
                                         fontWeight: FontWeight.w600,
                                         fontSize: 14,
-                                        fontFamily: GoogleFonts.poppins().fontFamily,
+                                        fontFamily:
+                                            GoogleFonts.poppins().fontFamily,
                                       ),
                                     ),
                                   ],
                                 ),
-
-
                                 const SizedBox(width: 10),
-
-
                                 Expanded(
                                   child: AnimatedOpacity(
                                     duration: const Duration(seconds: 1),
                                     opacity: 1,
                                     child: Container(
                                       decoration: BoxDecoration(
-                                        border: Border.all(color: Colors.black, width: 1.3), // Black border
-                                        borderRadius: const BorderRadius.all(Radius.circular(10)),
+                                        border: Border.all(
+                                            color: Colors.black,
+                                            width: 1.3), // Black border
+                                        borderRadius: const BorderRadius.all(
+                                            Radius.circular(10)),
                                       ),
                                       child: LinearPercentIndicator(
                                         lineHeight: 10,
-                                        percent: (_remainingDistanceKM_TotalPath != null && totalZigzagPathKm != null && totalZigzagPathKm != 0)
-                                            ? _remainingDistanceKM_TotalPath / totalZigzagPathKm
+                                        percent: (_remainingDistanceKM_TotalPath !=
+                                                    null &&
+                                                totalZigzagPathKm != null &&
+                                                totalZigzagPathKm != 0)
+                                            ? _remainingDistanceKM_TotalPath /
+                                                totalZigzagPathKm
                                             : 0.0, // default to 0 if values are invalid
                                         linearGradient: const LinearGradient(
-                                          colors: [Colors.red, Colors.green], // White
+                                          colors: [
+                                            Colors.red,
+                                            Colors.green
+                                          ], // White
                                         ),
                                         backgroundColor: Colors.grey[200],
                                         barRadius: const Radius.circular(10),
-                                        padding: EdgeInsets.zero, // Remove extra padding
+                                        padding: EdgeInsets
+                                            .zero, // Remove extra padding
                                       ),
                                     ),
                                   ),
@@ -3183,17 +3898,10 @@ class _Fetch_InputState extends State<Fetch_Input> {
                 ),
 
               widget.isManualControl
-                  ?
-
-
-
-
-
-
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                /*  Row(
+                  ? Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        /*  Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Column(
@@ -3217,73 +3925,99 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               width:50,
                               height:50,
                             ),
-                          ),                         
+                          ),
                         ],
                       ),
                     ],
                   ),*/
-                  const SizedBox(height: 5),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      GestureDetector(
-                        onTapDown: (TapDownDetails details) {
-                          setState(() {
-                            _isbackwardPressed = true;
-                          });
-                          ManualStartMovement(() => _moveBackward(_dronepath, _selectedPathsQueue)); // Start movement
-                        },
-                        onTapUp: (TapUpDetails details) {
-                          setState(() {
-                            _isbackwardPressed = false;
-                          });
-                          _stopMovement(); // Stop movement when button released
-                        },
-                        child: Image.asset(
-                          _isbackwardPressed ? 'images/bwd_active.png' : 'images/bwd.png',
-                          width:50,
-                          height:50,
+                        const SizedBox(height: 5),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            GestureDetector(
+                              onTapDown: (TapDownDetails details) {
+                                setState(() {
+                                  _isbackwardPressed = true;
+                                  _isMoving = true;
+                                  if (widget.groundMode) {
+                                    _startManualMovement_UGV(
+                                        _dronepath, _selectedPathsQueue,
+                                        forward:
+                                            false); // Start backward movement
+                                  } else {
+                                    _startManualMovement_UAV(
+                                        _selectedPathsQueue,
+                                        forward:
+                                            false); // Start backward movement
+                                  }
+                                });
+                              },
+                              onTapUp: (TapUpDetails details) {
+                                setState(() {
+                                  _isbackwardPressed = false;
+                                  _isMoving = false;
+                                });
+                                _stopMovement(); // Stop movement when button released
+                              },
+                              child: Image.asset(
+                                _isbackwardPressed
+                                    ? 'images/bwd_active.png'
+                                    : 'images/bwd.png',
+                                width: 50,
+                                height: 50,
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _stopMovement(); // Stop movement function called
+                                });
+                              },
+                              child: Image.asset(
+                                'images/stop.png',
+                                width: _isStop ? 45 : 35,
+                                height: _isStop ? 45 : 35,
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            GestureDetector(
+                              onTapDown: (TapDownDetails details) {
+                                setState(() {
+                                  _isforwardPressed = true;
+                                  _isMoving = true;
+                                  if (widget.groundMode) {
+                                    _startManualMovement_UGV(
+                                        _dronepath, _selectedPathsQueue,
+                                        forward:
+                                            true); // Start forward movement
+                                  } else {
+                                    _startManualMovement_UAV(
+                                        _selectedPathsQueue,
+                                        forward:
+                                            true); // Start forward movement
+                                  }
+                                });
+                              },
+                              onTapUp: (TapUpDetails details) {
+                                setState(() {
+                                  _isforwardPressed = false;
+                                  _isMoving = false;
+                                });
+                                _stopMovement(); // Stop movement when button released
+                              },
+                              child: Image.asset(
+                                _isforwardPressed
+                                    ? 'images/fwd_active.png'
+                                    : 'images/fwd.png',
+                                width: 50,
+                                height: 50,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
 
-                      const SizedBox(width: 5),
-                      GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _stopMovement(); // Stop movement function called
-                          });
-                        },
-
-                        child: Image.asset(
-                          'images/stop.png',
-                          width: _isStop ? 45 : 35,
-                          height: _isStop ? 45 : 35,
-                        ),
-                      ),
-                      SizedBox(width: 5),
-                      GestureDetector(
-                        onTapDown: (TapDownDetails details) {
-                          setState(() {
-                            _isforwardPressed = true;
-                          });
-                          ManualStartMovement(() => _moveForward(_dronepath, _selectedPathsQueue)); // Start movement
-                        },
-                        onTapUp: (TapUpDetails details) {
-                          setState(() {
-                            _isforwardPressed = false;
-                          });
-                          _stopMovement(); // Stop movement when button released
-                        },
-                        child: Image.asset(
-                          _isforwardPressed ? 'images/fwd_active.png' : 'images/fwd.png',
-                          width: 50,
-                          height: 50,
-                        ),
-                      ),
-
-                    ],
-                  ),
-                  /*Row(
+                        /*Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Column(
@@ -3314,16 +4048,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       ),
                     ],
                   ),*/
-                ],
-              )
-
-
+                      ],
+                    )
                   : Container(),
-
-
-
-
-
             ]),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -3400,8 +4127,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       const SizedBox(
                           width: 9), // Reduced space between icon and text
                       const Icon(Icons.warning_amber_outlined,
-                          color: Colors.white,
-                          size: 18), // Reduced icon size
+                          color: Colors.white, size: 18), // Reduced icon size
                     ],
                   ),
                 ),
@@ -3468,65 +4194,63 @@ class _Fetch_InputState extends State<Fetch_Input> {
                       child: _currentLocation == null
                           ? const Center(child: CircularProgressIndicator())
                           : RepaintBoundary(
-                        key: _googleMapKey, // Attach the key to GoogleMap
-                        child: GoogleMap(
-                          initialCameraPosition: _currentLocation != null
-                              ? CameraPosition(
-                            target: LatLng(
-                              _currentLocation!.latitude!,
-                              _currentLocation!.longitude!,
-                            ),
-                            zoom: 15.0,
-                          )
-                              : const CameraPosition(
-                            target: LatLng(
-                                0, 0), // Default fallback position
-                            zoom: 3.0, // Low zoom for global view
-                          ),
-                          markers: {
-                            ..._markers,
-                            if (_currentPosition != null)
-                              Marker(
-                                markerId:
-                                const MarkerId('currentLocation'),
-                                position: _currentPosition,
-                                icon:
-                                BitmapDescriptor.defaultMarkerWithHue(
-                                    BitmapDescriptor.hueViolet),
+                              key: _googleMapKey, // Attach the key to GoogleMap
+                              child: GoogleMap(
+                                initialCameraPosition: _currentLocation != null
+                                    ? CameraPosition(
+                                        target: LatLng(
+                                          _currentLocation!.latitude!,
+                                          _currentLocation!.longitude!,
+                                        ),
+                                        zoom: 15.0,
+                                      )
+                                    : const CameraPosition(
+                                        target: LatLng(
+                                            0, 0), // Default fallback position
+                                        zoom: 3.0, // Low zoom for global view
+                                      ),
+                                markers: {
+                                  ..._markers,
+                                  if (_currentPosition != null)
+                                    Marker(
+                                      markerId:
+                                          const MarkerId('currentLocation'),
+                                      position: _currentPosition,
+                                      icon:
+                                          BitmapDescriptor.defaultMarkerWithHue(
+                                              BitmapDescriptor.hueViolet),
+                                    ),
+                                },
+                                polylines: _polylines,
+                                polygons: {
+                                  ..._FieldPolygons, // Field detection polygons
+                                  ...polygons, // Custom polygons you will draw
+                                },
+                                zoomGesturesEnabled: true,
+                                rotateGesturesEnabled: true,
+                                scrollGesturesEnabled: true,
+                                buildingsEnabled: true,
+                                onTap: _isCustomMode ? _onMapTap : null,
+                                myLocationEnabled: true,
+                                myLocationButtonEnabled: false,
+                                onMapCreated: (controller) {
+                                  _googleMapController = controller;
+                                  // Camera animation is now handled separately.
+                                  _checkCityAndFetchData(); // Fetch and display Field data on map creation
+                                },
+                                gestureRecognizers: <Factory<
+                                    OneSequenceGestureRecognizer>>{
+                                  Factory<OneSequenceGestureRecognizer>(
+                                      () => EagerGestureRecognizer()),
+                                },
                               ),
-                          },
-                          polylines: _polylines,
-                          polygons: {
-                            ..._buildingPolygons, // Building detection polygons
-                            ...polygons,   // Custom polygons you will draw
-                          },
-                          zoomGesturesEnabled: true,
-                          rotateGesturesEnabled: true,
-                          scrollGesturesEnabled: true,
-                          buildingsEnabled: false,
-                          onTap: _isCustomMode ? _onMapTap : null,
-                          myLocationEnabled: true,
-                          myLocationButtonEnabled: false,
-                          onMapCreated: (controller) {
-                            _googleMapController = controller;
-                            // Camera animation is now handled separately.
-                            _checkCityAndFetchData(); // Fetch and display building data on map creation
-                          },
-                          gestureRecognizers: <Factory<
-                              OneSequenceGestureRecognizer>>{
-                            Factory<OneSequenceGestureRecognizer>(
-                                    () => EagerGestureRecognizer()),
-                          },
-                        ),
-                      ),
-
-
+                            ),
                     ),
                     Padding(
                       padding: const EdgeInsets.all(8.0),
                       child: ClipRRect(
                         borderRadius:
-                        BorderRadius.circular(30.0), // Capsule shape
+                            BorderRadius.circular(30.0), // Capsule shape
                         child: Container(
                           decoration: const BoxDecoration(
                             color: Colors.white,
@@ -3555,9 +4279,9 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                 suffixIcon: IconButton(
                                   icon: const Icon(Icons.search,
                                       color:
-                                      Colors.black), // Customize icon color
+                                          Colors.black), // Customize icon color
                                   onPressed:
-                                  _hideKeyboard, // Hide keyboard on search button press
+                                      _hideKeyboard, // Hide keyboard on search button press
                                 ),
                                 contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16.0, vertical: 12.0),
@@ -3569,29 +4293,29 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               }
                               _debounce?.cancel();
                               final completer =
-                              Completer<List<geocoding.Placemark>>();
+                                  Completer<List<geocoding.Placemark>>();
                               _debounce = Timer(const Duration(microseconds: 1),
-                                      () async {
-                                    List<geocoding.Placemark> placemarks = [];
-                                    try {
-                                      List<geocoding.Location> locations =
+                                  () async {
+                                List<geocoding.Placemark> placemarks = [];
+                                try {
+                                  List<geocoding.Location> locations =
                                       await geocoding
                                           .locationFromAddress(pattern);
-                                      if (locations.isNotEmpty) {
-                                        placemarks = await Future.wait(
-                                          locations.map((location) =>
-                                              geocoding.placemarkFromCoordinates(
-                                                location.latitude,
-                                                location.longitude,
-                                              )),
-                                        ).then((results) =>
-                                            results.expand((x) => x).toList());
-                                      }
-                                    } catch (e) {
-                                      // Handle error if needed
-                                    }
-                                    completer.complete(placemarks);
-                                  });
+                                  if (locations.isNotEmpty) {
+                                    placemarks = await Future.wait(
+                                      locations.map((location) =>
+                                          geocoding.placemarkFromCoordinates(
+                                            location.latitude,
+                                            location.longitude,
+                                          )),
+                                    ).then((results) =>
+                                        results.expand((x) => x).toList());
+                                  }
+                                } catch (e) {
+                                  // Handle error if needed
+                                }
+                                completer.complete(placemarks);
+                              });
                               return completer.future;
                             },
                             itemBuilder:
@@ -3599,16 +4323,16 @@ class _Fetch_InputState extends State<Fetch_Input> {
                               return ListTile(
                                 leading: const Icon(Icons.location_on,
                                     color:
-                                    Colors.green), // Customize icon color
+                                        Colors.green), // Customize icon color
                                 title: Text(
                                   suggestion.name ??
                                       'No Country/City Available',
                                   style: TextStyle(
                                     fontFamily:
-                                    GoogleFonts.poppins().fontFamily,
+                                        GoogleFonts.poppins().fontFamily,
                                     fontSize: 16.0,
                                     fontWeight:
-                                    FontWeight.w400, // Customize font size
+                                        FontWeight.w400, // Customize font size
                                     color: Colors.black, // Customize text color
                                   ),
                                 ),
@@ -3616,11 +4340,11 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                   suggestion.locality ?? 'No locality Exists',
                                   style: TextStyle(
                                     fontFamily:
-                                    GoogleFonts.poppins().fontFamily,
+                                        GoogleFonts.poppins().fontFamily,
 
                                     fontSize: 14.0, // Customize font size
                                     color:
-                                    Colors.black54, // Customize text color
+                                        Colors.black54, // Customize text color
                                   ),
                                 ),
                               );
@@ -3631,8 +4355,8 @@ class _Fetch_InputState extends State<Fetch_Input> {
                                   '${suggestion.name ?? ''}, ${suggestion.locality ?? ''}';
                               try {
                                 List<geocoding.Location> locations =
-                                await geocoding
-                                    .locationFromAddress(address);
+                                    await geocoding
+                                        .locationFromAddress(address);
                                 if (locations.isNotEmpty) {
                                   final location = locations.first;
 
@@ -3665,20 +4389,6 @@ class _Fetch_InputState extends State<Fetch_Input> {
     );
   }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   Future<void> captureBottomHalfGoogleMap() async {
     try {
       // Capture the widget as an image
@@ -3692,7 +4402,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
       // Convert the image to byte data and extract only the bottom half
       final ByteData? byteData =
-      await capturedImage.toByteData(format: ui.ImageByteFormat.png);
+          await capturedImage.toByteData(format: ui.ImageByteFormat.png);
 
       if (byteData != null) {
         final Uint8List pngBytes = byteData.buffer.asUint8List();
@@ -3707,6 +4417,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error capturing GoogleMap screenshot: $e');
     }
   }
+
   Uint8List cropBottomHalf(Uint8List originalBytes, int width, int height) {
     // Decode the original image from the Uint8List
     final img.Image? originalImage = img.decodeImage(originalBytes);
@@ -3727,6 +4438,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     return originalBytes; // Return original bytes if decoding fails
   }
+
   void animateToFirstMarker() {
     if (_isCustomMode == false && _markerPositions.isNotEmpty) {
       _googleMapController.animateCamera(
@@ -3739,6 +4451,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
       );
     }
   }
+
   void _updateRouteData() {
     try {
       for (int i = 0; i < _markers.length; i++) {
@@ -3768,18 +4481,18 @@ class _Fetch_InputState extends State<Fetch_Input> {
       print('Error updating route data: $e');
     }
   }
-  void _onMapTap(LatLng latLng) async {
-    // Check if the tapped location intersects with any building polygon
-    bool isOnBuilding = _buildingPolygons.any((polygon) =>
-        _isPointInPolygon(latLng, polygon.points));
 
-    if (isOnBuilding) {
-      // Show snackbar indicating that the marker can't be placed on buildings or residential areas
-      _showSnackbar(context, 'Cannot place marker on building areas');
+  void _onMapTap(LatLng latLng) async {
+    // Check if the tapped location intersects with any Field polygon
+    bool isNotOnField = !_isPointInAnyPolygon(latLng);
+
+    if (isNotOnField) {
+      // Show snackbar indicating that the marker can't be placed on Fields or residential areas
+      _showSnackbar(context, 'Cannot place marker. Please Tap On shaded areas');
       return; // Exit the function to avoid placing the marker
     }
 
-    // Continue with marker placement if no building is detected
+    // Continue with marker placement if no Field is detected
     final markerId = MarkerId('M${_markers.length + 1}');
     final newMarker = Marker(
       markerId: markerId,
@@ -3805,27 +4518,65 @@ class _Fetch_InputState extends State<Fetch_Input> {
       }
     });
   }
-// Helper function to check if a point is inside a polygon
-  bool _isPointInPolygon(LatLng point, List<LatLng> points) {
-    int j = points.length - 1;
-    bool inside = false;
 
-    for (int i = 0; i < points.length; i++) {
-      if ((points[i].longitude < point.longitude && points[j].longitude >= point.longitude) ||
-          (points[j].longitude < point.longitude && points[i].longitude >= point.longitude)) {
-        if (points[i].latitude + (point.longitude - points[i].longitude) /
-            (points[j].longitude - points[i].longitude) *
-            (points[j].latitude - points[i].latitude) < point.latitude) {
-          inside = !inside;
-        }
+  bool _isPointInAnyPolygon(LatLng point) {
+    for (Polygon polygon in _FieldPolygons) {
+      if (_isPointInPolygon(point, polygon)) {
+        return true;
       }
-      j = i;
     }
-    return inside;
+    return false;
   }
+
+  bool _isPointInPolygon(LatLng point, Polygon polygon) {
+    int intersections = 0;
+    for (int i = 0; i < polygon.points.length - 1; i++) {
+      LatLng p1 = polygon.points[i];
+      LatLng p2 = polygon.points[i + 1];
+
+      if (_rayCrossesSegment(point, p1, p2)) {
+        intersections++;
+      }
+    }
+    // If the number of intersections is odd, the point is inside the polygon
+    return (intersections % 2 == 1);
+  }
+
+  bool _rayCrossesSegment(LatLng point, LatLng p1, LatLng p2) {
+    // Ensure p1 has a smaller y-coordinate than p2
+    if (p1.latitude > p2.latitude) {
+      LatLng temp = p1;
+      p1 = p2;
+      p2 = temp;
+    }
+
+    // Check if the point is out of the vertical bounds of the segment
+    if (point.latitude == p1.latitude || point.latitude == p2.latitude) {
+      point = LatLng(point.latitude + 0.00001,
+          point.longitude); // Small offset to avoid collinear points
+    }
+
+    if (point.latitude < p1.latitude || point.latitude > p2.latitude) {
+      return false;
+    }
+
+    // Check if the point is to the right of the segment
+    if (point.longitude >= max(p1.longitude, p2.longitude)) {
+      return false;
+    }
+
+    if (point.longitude < min(p1.longitude, p2.longitude)) {
+      return true;
+    }
+
+    double slope = (p2.longitude - p1.longitude) / (p2.latitude - p1.latitude);
+    double intersectionLongitude =
+        p1.longitude + (point.latitude - p1.latitude) * slope;
+
+    return point.longitude < intersectionLongitude;
+  }
+
   Future<void> _checkCityAndFetchData() async {
-    // Get the city name from the weatherController (you may need to adapt this part depending on your architecture)
-    // String cityName = weatherController.weather.value.cityname;
     String cityName = 'rawalpindi';
 
     if (cityName.isEmpty) {
@@ -3835,86 +4586,86 @@ class _Fetch_InputState extends State<Fetch_Input> {
 
     switch (cityName.toLowerCase()) {
       case 'islamabad':
-        await _fetchBuildingData(
-            'https://overpass-api.de/api/interpreter?data=[out:json];node[building](33.6600,73.1000,34.2000,73.3000);out;');
+        await _fetchFieldData(
+            'https://overpass-api.de/api/interpreter?data=[out:json];area["landuse"~"grass|meadow|farmland|orchard|village_green|recreation_ground|park|garden|allotments"](33.6600,73.1000,34.2000,73.3000);(._;>;);out;');
         break;
       case 'rawalpindi':
-        await _fetchBuildingData(
-            'https://overpass-api.de/api/interpreter?data=[out:json];node[building](33.5667,73.0500,33.7167,73.2000);out;');
+        await _fetchFieldData(
+            'https://overpass-api.de/api/interpreter?data=[out:json];area["landuse"~"grass|meadow|farmland|orchard|village_green|recreation_ground|park|garden|allotments"](33.5667,73.0500,33.7167,73.2000);(._;>;);out;');
         break;
       case 'lahore':
-        await _fetchBuildingData(
-            'https://overpass-api.de/api/interpreter?data=[out:json];node[building](31.4000,73.0300,31.6000,74.4000);out;');
+        await _fetchFieldData(
+            'https://overpass-api.de/api/interpreter?data=[out:json];area["landuse"~"grass|meadow|farmland|orchard|village_green|recreation_ground|park|garden|allotments"](31.4000,73.0300,31.6000,74.4000);(._;>;);out;');
         break;
       case 'karachi':
-        await _fetchBuildingData(
-            'https://overpass-api.de/api/interpreter?data=[out:json];node[building](24.8500,66.8500,25.2000,67.2000);out;');
+        await _fetchFieldData(
+            'https://overpass-api.de/api/interpreter?data=[out:json];area["landuse"~"grass|meadow|farmland|orchard|village_green|recreation_ground|park|garden|allotments"](24.8500,66.8500,25.2000,67.2000);(._;>;);out;');
         break;
       case 'quetta':
-        await _fetchBuildingData(
-            'https://overpass-api.de/api/interpreter?data=[out:json];node[building](30.1000,66.8500,30.3000,67.0000);out;');
+        await _fetchFieldData(
+            'https://overpass-api.de/api/interpreter?data=[out:json];area["landuse"~"grass|meadow|farmland|orchard|village_green|recreation_ground|park|garden|allotments"](30.1000,66.8500,30.3000,67.0000);(._;>;);out;');
         break;
       default:
-        print('City not recognized for fetching building data.');
+        print('City not recognized for fetching Field data.');
         break;
     }
   }
-  Future<void> _fetchBuildingData(String url) async {
+
+  Future<void> _fetchFieldData(String url) async {
     final response = await http.get(Uri.parse(url));
 
     if (response.statusCode == 200) {
       try {
         final data = jsonDecode(response.body);
-        _processBuildingData(data);
+        _processFieldData(data);
       } catch (e) {
         print('Error decoding JSON: $e');
       }
     } else {
-      throw Exception('Failed to fetch building data');
+      throw Exception('Failed to fetch Field data');
     }
   }
-  void _processBuildingData(Map<String, dynamic> data) {
+
+  void _processFieldData(Map<String, dynamic> data) {
+    Map<int, LatLng> nodes = {}; // To store all nodes with their coordinates
     List<Polygon> polygons = [];
 
+    // First, extract all the nodes
     for (var element in data['elements']) {
       if (element['type'] == 'node') {
-        var lat = element['lat'];
-        var lon = element['lon'];
+        nodes[element['id']] = LatLng(element['lat'], element['lon']);
+      }
+    }
 
-        // Create a circular polygon around the building coordinate
-        List<LatLng> circlePoints = _createCirclePoints(LatLng(lat, lon), 0.029, 8); // Radius and number of points
+    // Now, go through the ways and build polygons using the nodes
+    for (var element in data['elements']) {
+      if (element['type'] == 'way') {
+        List<LatLng> polygonPoints = [];
+
+        // Add points to the polygon by referencing the node IDs
+        for (var nodeId in element['nodes']) {
+          if (nodes.containsKey(nodeId)) {
+            polygonPoints
+                .add(nodes[nodeId]!); // Add the LatLng from the node map
+          }
+        }
 
         polygons.add(Polygon(
-          polygonId: PolygonId('building_${element['id']}'),
-          points: circlePoints,
-          strokeColor: Colors.red.shade900,
-          strokeWidth: 1,
-          fillColor: Colors.red.withOpacity(0.3),
+          polygonId: PolygonId('area_${element['id']}'),
+          points: polygonPoints,
+          strokeColor: Colors.purpleAccent.shade700,
+          strokeWidth: 3,
+          fillColor: Colors.purpleAccent.withOpacity(0.1),
         ));
       }
     }
 
+    // Update the state to display the polygons
     setState(() {
-      _buildingPolygons = polygons.toSet(); // Ensure you use Set<Polygon>
+      _FieldPolygons = polygons.toSet(); // Ensure you use Set<Polygon>
     });
   }
-  List<LatLng> _createCirclePoints(LatLng center, double radius, int pointsCount) {
-    List<LatLng> circlePoints = [];
-    const double degreeToRadians = pi / 180.0;
 
-    for (int i = 0; i < pointsCount; i++) {
-      double angle = degreeToRadians * (i * (360 / pointsCount)); // Distribute points evenly
-      double latOffset = radius * cos(angle);
-      double lonOffset = radius * sin(angle);
-
-      double lat = center.latitude + latOffset;
-      double lon = center.longitude + lonOffset;
-
-      circlePoints.add(LatLng(lat, lon));
-    }
-
-    return circlePoints;
-  }
 //area calculation of field
   double _calculateSphericalPolygonArea(List<LatLng> points) {
     const double radiusOfEarth = 6378137.0; // Earth's radius in meters
@@ -4099,6 +4850,7 @@ class _Fetch_InputState extends State<Fetch_Input> {
     return areaInAcres;
   }*/
 }
+
 void _showSnackbar(BuildContext context, String message) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
@@ -4123,6 +4875,32 @@ void _showSnackbar(BuildContext context, String message) {
     ),
   );
 }
+
+void _showSnackbar_connection(BuildContext context, String message) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(
+        message,
+        style: TextStyle(
+          fontFamily: GoogleFonts.poppins().fontFamily,
+          fontSize: 16,
+          color: Colors.white,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      backgroundColor: Colors.green.withOpacity(0.8),
+      duration: const Duration(seconds: 5),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(
+          Radius.circular(10),
+        ),
+      ),
+      behavior: SnackBarBehavior.floating,
+      margin: EdgeInsets.all(8),
+    ),
+  );
+}
+
 void _showRestrictedAreaSnackbar(BuildContext context, String message) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
@@ -4136,7 +4914,7 @@ void _showRestrictedAreaSnackbar(BuildContext context, String message) {
         ),
       ),
       backgroundColor: Colors.red.withOpacity(0.8),
-      duration: const Duration(seconds: 7),
+      duration: const Duration(seconds: 12),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.all(
           Radius.circular(10),
@@ -4147,12 +4925,17 @@ void _showRestrictedAreaSnackbar(BuildContext context, String message) {
     ),
   );
 }
+
 class _CardItem extends StatelessWidget {
   final String title;
   final String value;
   final Color color;
   final IconData icon;
-  _CardItem({required this.title, required this.value, required this.color, required this.icon});
+  _CardItem(
+      {required this.title,
+      required this.value,
+      required this.color,
+      required this.icon});
 
   @override
   Widget build(BuildContext context) {
@@ -4167,7 +4950,6 @@ class _CardItem extends StatelessWidget {
             children: [
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
-
                 children: [
                   Text(
                     title,
@@ -4179,9 +4961,7 @@ class _CardItem extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 4),
-
                   Icon(icon, color: Colors.white, size: 18),
-
                 ],
               ),
               Text(

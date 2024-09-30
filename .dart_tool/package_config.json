@@ -875,10 +875,10 @@
       "name": "project_drone",
       "rootUri": "../",
       "packageUri": "lib/",
-      "languageVersion": "3.1"
+      "languageVersion": "3.5"
     }
   ],
-  "generated": "2024-09-24T08:41:19.598178Z",
+  "generated": "2024-09-30T05:50:51.882385Z",
   "generator": "pub",
   "generatorVersion": "3.5.2",
   "flutterRoot": "file:///home/kali/Downloads/flutter",

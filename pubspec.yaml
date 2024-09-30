@@ -5,7 +5,7 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.1.5 <4.0.0'
+  sdk: '>=3.5.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -62,3 +62,7 @@ flutter:
     - images/auto.png
     - images/manual.png
     - images/saas.png
+    - images/uav_active.png
+    - images/uav_dead.png
+    - images/ugv_active.png
+    - images/ugv_dead.png

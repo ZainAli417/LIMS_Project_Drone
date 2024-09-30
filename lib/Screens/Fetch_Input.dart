@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:geolocator/geolocator.dart' as geo; // For GPS updates
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
@@ -7,6 +8,7 @@ import 'dart:ui';
 import 'package:file_picker/file_picker.dart';
 import 'package:geocoding/geocoding.dart' as geocoding; // Prefixed geocoding
 import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image/image.dart' as img;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -37,9 +39,7 @@ import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:latlong2/latlong.dart' as latlong;
 import 'package:http/http.dart' as http;
 import 'LoginScreen.dart';
-
 enum PathDirection { horizontal, vertical }
-
 class Fetch_Input extends StatefulWidget {
   // final YoutubePlayerController controller;
   final bool isManualControl; // Accept the boolean parameter
@@ -53,8 +53,7 @@ class Fetch_Input extends StatefulWidget {
   _Fetch_InputState createState() => _Fetch_InputState();
 }
 
-class _Fetch_InputState extends State<Fetch_Input>
-    with SingleTickerProviderStateMixin {
+class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStateMixin {
   final GlobalKey _googleMapKey = GlobalKey(); // Key to capture GoogleMap
   late GoogleMapController _googleMapController;
   LatLng _currentPosition = LatLng(0, 0); // Default position
@@ -65,18 +64,15 @@ class _Fetch_InputState extends State<Fetch_Input>
   late LatLng? selectedMarker = _markers.isNotEmpty
       ? _markers.first.position
       : null; // Store selected marker position
-
 // Firebase Variables for Lat/Lng Streaming
   late DatabaseReference _latRef;
   late DatabaseReference _longRef;
   late Stream<DatabaseEvent> _latStream;
   late Stream<DatabaseEvent> _longStream;
-
   // Firebase Storage Variables for Cloud Files
   List<String> cloudFiles =
       []; // Store list of cloud files fetched from Firebase
   bool isLoading = true; // Track if cloud files are loading
-
   // Path and Polyline Variables
   Set<Polyline> _polylines = {}; // Store drawn paths
   List<List<LatLng>> _allPaths = []; // All paths loaded
@@ -100,7 +96,6 @@ class _Fetch_InputState extends State<Fetch_Input>
   String direction = ""; // Store direction ("forward" or "backward")
   PathDirection _selectedDirection =
       PathDirection.horizontal; // Store the selected direction
-
   // Distance Tracking Variables
   double _totalDistanceKM = 0.0; // Total distance of path in KM
   double distanceTraveled = 0.0; // Total distance traveled
@@ -117,6 +112,7 @@ class _Fetch_InputState extends State<Fetch_Input>
   double _remainingDistanceKM_SelectedPath =
       0.0; // Remaining distance in the selected path
 
+
   // UI and Input Control Variables
   bool _isFullScreen = false; // Track fullscreen mode
   bool _isStop = false; // Stop control flag
@@ -127,7 +123,6 @@ class _Fetch_InputState extends State<Fetch_Input>
   bool _ismanual = false; // Track if manual mode is enabled
   bool _isCustomMode = false; // Custom mode flag
   bool _isShapeClosed = false; // Check if shape (polygon) is closed
-
   // UI for Method and File Selection
   String? _selectedLocalFilePath; // Store local file path
   String _selectedMethod = 'N/A'; // Store selected method
@@ -138,24 +133,23 @@ class _Fetch_InputState extends State<Fetch_Input>
   String? _selectedCloudFile =
       'N/A in Manual Mode'; // Store selected cloud file
   double _turnLength = 5.0; // Turn length for path calculation
-
   // Miscellaneous Variables
   final ScreenshotController _screenshotController =
       ScreenshotController(); // Screenshot controller
   final FocusNode _focusNode = FocusNode(); // Focus node for input controls
   Timer? _debounce; // Debounce timer for input throttling
   MarkerId? _selectedMarkerId; // Track the selected marker ID
-
   // Firebase Realtime Database and Weather Controller
   final DatabaseReference _databaseReference =
       FirebaseDatabase.instance.ref(); // Firebase reference
   final WeatherController weatherController =
       Get.put(WeatherController()); // Weather controller
   VoidCallback? _controllerButtonListener; // Button listener for the controller
-
   // Custom Icons
   late BitmapDescriptor ugv_active; // UGV active icon
   late BitmapDescriptor ugv_dead; // UGV dead icon
+  late BitmapDescriptor uav_active; // UAV active icon
+  late BitmapDescriptor uav_dead; // UAV dead icon
   int _currentPointIndex = 0;
   List<LatLng> _dronepath = [];
   double updateInterval = 0.1; // seconds
@@ -167,41 +161,64 @@ class _Fetch_InputState extends State<Fetch_Input>
       'Cannot place marker on Fields. Please select a plain area';
   late AnimationController _controller;
   double _offset = 0;
+  StreamSubscription<Position>? _gpsStreamSubscription;
+  double trackTolerance =
+      0.01; // Define tolerance in kilometers, adjust as necessary
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-        vsync: this, duration: Duration(seconds: 20))
-      ..addListener(() {
-        setState(() {
-          _offset =
-              _controller.value * 300; // Adjust according to your text width
-        });
-      });
-    _controller.repeat();
-    // Show input popup on widget load
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _showInputSelectionPopup();
-    });
-    _fetchCloudFiles();
-    _initializeFirebaseListener();
-    _checkCityAndFetchData();
 
-    // Check city data and fetch necessary information
-    // Fetch cloud files from Firebase Storage
+    _controller = AnimationController(
+      vsync: this,
+      duration: Duration(seconds: 20),
+    )..addListener(() {
+      setState(() {
+        _offset = _controller.value * 300; // Adjust according to your text width
+      });
+    });
+
+    _controller.repeat();
+
+    // Show either input popup or ONMAPTAP based on ISSAAS mode
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Accessing the ISSAASProvider to check if ISSAAS mode is active
+      bool isISSAASMode = Provider.of<ISSAASProvider>(context, listen: false).isSaas;
+
+      if (isISSAASMode) {
+        // ISSAAS mode is true, load ONMAPTAP functionality
+        _isCustomMode=true;
+        _selectedMethod = 'Manual Spray Mode'; // Store selection
+
+      } else {
+        // ISSAAS mode is false, show input selection popup
+        _showInputSelectionPopup();
+        _checkCityAndFetchData();
+        _fetchCloudFiles();
+
+      }
+    });
+
+    // Perform other initializations
+    _initializeFirebaseListener();
+
     // Request location permissions from the user
     _requestLocationPermission();
-    // Initialize Firebase Realtime Database listeners
+
     // Initialize marker position if available
     if (_markers.isNotEmpty) {
       selectedMarker = _markers.first.position;
     }
+
     // Set default car position
     _carPosition = LatLng(0, 0);
+
     // Load car icons (active and dead)
     _loadCarIcons();
+   _loadCarIcons_UAV();
+
   }
+
 
   @override
   void dispose() {
@@ -212,7 +229,6 @@ class _Fetch_InputState extends State<Fetch_Input>
     _controller.dispose(); // Dispose focus node
     super.dispose();
   }
-
   void _resetMarkers() async {
     setState(() {
       // Reset to default values
@@ -240,7 +256,6 @@ class _Fetch_InputState extends State<Fetch_Input>
       MaterialPageRoute(builder: (BuildContext context) => widget),
     );
   }
-
   double calculate_selcted_segemnt_distance(List<LatLng> path) {
     double totalDistance = 0.0;
     for (int i = 0; i < path.length - 1; i++) {
@@ -250,13 +265,11 @@ class _Fetch_InputState extends State<Fetch_Input>
 
     return totalDistance;
   } // Return distance in kilometers
-
   LatLng _lerpLatLng(LatLng a, LatLng b, double t) {
     double lat = a.latitude + (b.latitude - a.latitude) * t;
     double lng = a.longitude + (b.longitude - a.longitude) * t;
     return LatLng(lat, lng);
   }
-
   void _storeTimeDurationInDatabase(double totalDistanceInKM) {
     try {
       const double speed = 10; // Speed in meters per second
@@ -270,7 +283,6 @@ class _Fetch_InputState extends State<Fetch_Input>
       print('Error storing time duration in database: $e');
     }
   }
-
   void _storeTimeLeftInDatabase(double remainingDistanceKM_SelectedPath) async {
     try {
       const double speed = 10; // Speed in meters per second
@@ -284,7 +296,6 @@ class _Fetch_InputState extends State<Fetch_Input>
       print('Error storing time duration in database: $e');
     }
   }
-
   double calculateonelinedistance(LatLng start, LatLng end) {
     const R = 6371; // Radius of the Earth in kilometers
     double lat1 = start.latitude * pi / 180;
@@ -298,976 +309,13 @@ class _Fetch_InputState extends State<Fetch_Input>
     double c = 2 * atan2(sqrt(a), sqrt(1 - a));
     return R * c; // Distance in kilometers
   }
-
   double _calculateTotalDistanceZIGAG(List<LatLng> path) {
     double totalzigzagdis = 0.0;
     for (int i = 0; i < path.length - 1; i++) {
       totalzigzagdis += calculateonelinedistance(path[i], path[i + 1]);
     }
     return totalzigzagdis;
-  } // Return distance in kilometers
-
-  void _startMovement_UGV(
-      List<LatLng> path, List<List<LatLng>> selectedSegments) {
-    if (path.isEmpty || _selectedStartingPoint == null) {
-      print(
-          "Path is empty or starting point not selected, cannot start movement");
-      return;
-    }
-    _isMoving = true;
-
-    // Find the nearest point on the path to the selected starting point
-    int startingPointIndex =
-        _findClosestPointIndex(path, _selectedStartingPoint!);
-
-    // Set the car's initial position to the selected starting point
-    setState(() {
-      _carPosition = path[startingPointIndex]; // Start from the closest point
-      _currentPointIndex = startingPointIndex;
-    });
-
-    // Decide the direction-specific marker function
-    Add_Car_Marker(_isSegmentSelected(
-        path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
-
-    // Determine movement direction based on starting point
-    bool movingForward = startingPointIndex < path.length / 2;
-
-    // Start movement with timer
-    _movementTimer = Timer.periodic(
-        Duration(milliseconds: (updateInterval * 1000).toInt()), (timer) async {
-      if (_isMoving) {
-        if (movingForward) {
-          if (_currentPointIndex < path.length - 1) {
-            LatLng start = path[_currentPointIndex];
-            LatLng end = path[_currentPointIndex + 1];
-            double segmentDistanceKM = calculateonelinedistance(start, end);
-            double distanceCoveredInThisTickKM =
-                (speed * updateInterval) / 1000.0;
-            segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-            double segmentProgress =
-                (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
-            _carPosition = _lerpLatLng(start, end, segmentProgress);
-
-            bool isSelectedSegment = _isSegmentSelected(
-              path,
-              selectedSegments,
-              _currentPointIndex,
-              _isHorizontalDirection
-                  ? PathDirection.horizontal
-                  : PathDirection.vertical,
-            );
-
-            distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
-
-            if (isSelectedSegment) {
-              totalDistanceCoveredKM_SelectedPath +=
-                  distanceCoveredInThisTickKM;
-              double remainingDistanceKM_SelectedPath =
-                  _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
-              setState(() {
-                _remainingDistanceKM_SelectedPath =
-                    remainingDistanceKM_SelectedPath.clamp(
-                        0.0, _totalDistanceKM);
-                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
-              });
-
-              if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
-                FirebaseDatabase.instance
-                    .ref()
-                    .child('remainingDistance')
-                    .set(_remainingDistanceKM_SelectedPath);
-              }
-            }
-
-            setState(() {
-              _remainingDistanceKM_TotalPath =
-                  (totalZigzagPathKm - distanceCoveredInWholeJourney)
-                      .clamp(0.0, totalZigzagPathKm);
-            });
-
-            // Update car marker position
-            setState(() {
-              _markers.removeWhere(
-                  (marker) => marker.markerId == const MarkerId('car'));
-              Add_Car_Marker(isSelectedSegment);
-
-              if (segmentProgress >= 1.0) {
-                _currentPointIndex++;
-                segmentDistanceCoveredKM = 0.0;
-              }
-            });
-
-            if (_currentPointIndex >= path.length - 1) {
-              _isMoving = false;
-              timer.cancel();
-              _onPathComplete();
-            }
-          } else {
-            _movementTimer?.cancel();
-            _isMoving = false;
-            timer.cancel();
-            _onPathComplete();
-          }
-        } else {
-          if (_currentPointIndex > 0) {
-            LatLng start = path[_currentPointIndex];
-            LatLng end = path[_currentPointIndex - 1];
-            double segmentDistanceKM = calculateonelinedistance(start, end);
-            double distanceCoveredInThisTickKM =
-                (speed * updateInterval) / 1000.0;
-            segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-            double segmentProgress =
-                (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
-            _carPosition = _lerpLatLng(start, end, segmentProgress);
-
-            bool isSelectedSegment = _isSegmentSelected(
-              path,
-              selectedSegments,
-              _currentPointIndex - 1,
-              _isHorizontalDirection
-                  ? PathDirection.horizontal
-                  : PathDirection.vertical,
-            );
-
-            distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
-
-            if (isSelectedSegment) {
-              totalDistanceCoveredKM_SelectedPath +=
-                  distanceCoveredInThisTickKM;
-              double remainingDistanceKM_SelectedPath =
-                  _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
-              setState(() {
-                _remainingDistanceKM_SelectedPath =
-                    remainingDistanceKM_SelectedPath.clamp(
-                        0.0, _totalDistanceKM);
-                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
-              });
-
-              if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
-                FirebaseDatabase.instance
-                    .ref()
-                    .child('remainingDistance')
-                    .set(_remainingDistanceKM_SelectedPath);
-              }
-            }
-
-            setState(() {
-              _remainingDistanceKM_TotalPath =
-                  (totalZigzagPathKm - distanceCoveredInWholeJourney)
-                      .clamp(0.0, totalZigzagPathKm);
-            });
-
-            // Update car marker position
-            setState(() {
-              _markers.removeWhere(
-                  (marker) => marker.markerId == const MarkerId('car'));
-
-              Add_Car_Marker(isSelectedSegment);
-
-              if (segmentProgress >= 1.0) {
-                _currentPointIndex--;
-                segmentDistanceCoveredKM = 0.0;
-              }
-            });
-
-            if (_currentPointIndex <= 0) {
-              _isMoving = false;
-              timer.cancel();
-              _onPathComplete();
-            }
-          } else {
-            _movementTimer?.cancel();
-            _isMoving = false;
-            timer.cancel();
-            _onPathComplete();
-          }
-        }
-      }
-    });
-  }
-
-  void _startMovement_UAV(List<List<LatLng>> selectedSegmentsQueue) {
-    if (selectedSegmentsQueue.isEmpty || _selectedStartingPoint == null) {
-      print(
-          "Selected segments are empty or starting point not selected, cannot start movement");
-      return;
-    }
-
-    _isMoving = true;
-    int currentSegmentIndex = 0;
-    double totalDistanceCoveredKM_SelectedPath = 0.0;
-    double segmentDistanceCoveredKM = 0.0;
-    double distanceCoveredInWholeJourney = 0.0;
-
-    void _moveToNextSegment() {
-      if (currentSegmentIndex >= selectedSegmentsQueue.length) {
-        _isMoving = false;
-        _onPathComplete();
-        return;
-      }
-
-      List<LatLng> currentSegment = selectedSegmentsQueue[currentSegmentIndex];
-      int startingPointIndex =
-          _findClosestPointIndex(currentSegment, _selectedStartingPoint!);
-
-      setState(() {
-        _carPosition = currentSegment[startingPointIndex];
-        _currentPointIndex = startingPointIndex;
-      });
-
-      bool movingForward = startingPointIndex < currentSegment.length / 2;
-
-      _movementTimer = Timer.periodic(
-          Duration(milliseconds: (updateInterval * 1000).toInt()),
-          (timer) async {
-        if (_isMoving) {
-          if (movingForward) {
-            if (_currentPointIndex < currentSegment.length - 1) {
-              LatLng start = currentSegment[_currentPointIndex];
-              LatLng end = currentSegment[_currentPointIndex + 1];
-              double segmentDistanceKM = calculateonelinedistance(start, end);
-              double distanceCoveredInThisTickKM =
-                  (speed * updateInterval) / 1000.0;
-              segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-              double segmentProgress =
-                  (segmentDistanceCoveredKM / segmentDistanceKM)
-                      .clamp(0.0, 1.0);
-              _carPosition = _lerpLatLng(start, end, segmentProgress);
-
-              distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
-              totalDistanceCoveredKM_SelectedPath +=
-                  distanceCoveredInThisTickKM;
-              double remainingDistanceKM_SelectedPath =
-                  _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
-
-              setState(() {
-                _remainingDistanceKM_SelectedPath =
-                    remainingDistanceKM_SelectedPath.clamp(
-                        0.0, _totalDistanceKM);
-                _remainingDistanceKM_TotalPath =
-                    (totalZigzagPathKm - distanceCoveredInWholeJourney)
-                        .clamp(0.0, totalZigzagPathKm);
-                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
-                _markers.removeWhere(
-                    (marker) => marker.markerId == const MarkerId('car'));
-                Add_Car_Marker(true);
-
-                if (segmentProgress >= 1.0) {
-                  _currentPointIndex++;
-                  segmentDistanceCoveredKM = 0.0;
-                }
-              });
-
-              if (_currentPointIndex >= currentSegment.length - 1) {
-                timer.cancel();
-                currentSegmentIndex++;
-                _moveToNextSegment();
-              }
-            } else {
-              _isMoving = false;
-              timer.cancel();
-              _onPathComplete();
-            }
-          } else {
-            if (_currentPointIndex > 0) {
-              LatLng start = currentSegment[_currentPointIndex];
-              LatLng end = currentSegment[_currentPointIndex - 1];
-              double segmentDistanceKM = calculateonelinedistance(start, end);
-              double distanceCoveredInThisTickKM =
-                  (speed * updateInterval) / 1000.0;
-              segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-              double segmentProgress =
-                  (segmentDistanceCoveredKM / segmentDistanceKM)
-                      .clamp(0.0, 1.0);
-              _carPosition = _lerpLatLng(start, end, segmentProgress);
-
-              distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
-              totalDistanceCoveredKM_SelectedPath +=
-                  distanceCoveredInThisTickKM;
-              double remainingDistanceKM_SelectedPath =
-                  _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
-
-              setState(() {
-                _remainingDistanceKM_SelectedPath =
-                    remainingDistanceKM_SelectedPath.clamp(
-                        0.0, _totalDistanceKM);
-                _remainingDistanceKM_TotalPath =
-                    (totalZigzagPathKm - distanceCoveredInWholeJourney)
-                        .clamp(0.0, totalZigzagPathKm);
-                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
-                _markers.removeWhere(
-                    (marker) => marker.markerId == const MarkerId('car'));
-                Add_Car_Marker(true);
-
-                if (segmentProgress >= 1.0) {
-                  _currentPointIndex--;
-                  segmentDistanceCoveredKM = 0.0;
-                }
-              });
-
-              if (_currentPointIndex <= 0) {
-                timer.cancel();
-                currentSegmentIndex++;
-                _moveToNextSegment();
-              }
-            } else {
-              _isMoving = false;
-              timer.cancel();
-              _onPathComplete();
-            }
-          }
-        }
-      });
-    }
-
-    _moveToNextSegment();
-  }
-
-  /* void _startManualMovement_UGV(List<LatLng> path, List<List<LatLng>> selectedSegments, {required bool forward}) {
-    if (path.isEmpty || _selectedStartingPoint == null) {
-      print("Path is empty or starting point not selected, cannot start movement");
-      return;
-    }
-
-    // Continue movement if timer is active
-    if (_movementTimer != null && _movementTimer!.isActive) {
-      _isMoving = true;
-      return;
-    }
-
-    // Set the initial position if movement is just starting or resuming after stop
-    if (!_isMoving) {
-      int startingPointIndex = _findClosestPointIndex(path, _selectedStartingPoint!);
-
-      setState(() {
-        _carPosition = path[startingPointIndex];
-        _currentPointIndex = startingPointIndex;
-      });
-    }
-
-    // Add car marker
-    Add_Car_Marker(_isSegmentSelected(path, selectedSegments, _currentPointIndex, _isHorizontalDirection ? PathDirection.horizontal : PathDirection.vertical));
-
-    double updateInterval = 0.1; // seconds
-    double speed = 10.0; // meters per second
-    double segmentDistanceCoveredKM = 0.0;
-    double distanceCoveredInWholeJourney = 0.0;
-    double totalDistanceCoveredKM_SelectedPath = 0.0;
-
-    // Start movement with timer
-    _movementTimer = Timer.periodic(Duration(milliseconds: (updateInterval * 1000).toInt()), (timer) async {
-      if (_isMoving) {
-        if (forward) {
-          // Forward movement
-          if (_currentPointIndex < path.length) {
-            LatLng start = path[_currentPointIndex];
-            LatLng end = path[_currentPointIndex + 1];
-            double segmentDistanceKM = calculateonelinedistance(start, end);
-            double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
-            segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-            double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
-            _carPosition = _lerpLatLng(start, end, segmentProgress);
-
-            bool isSelectedSegment = _isSegmentSelected(path, selectedSegments, _currentPointIndex, _isHorizontalDirection ? PathDirection.horizontal : PathDirection.vertical);
-
-            distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
-
-            if (isSelectedSegment) {
-              totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
-              double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
-              setState(() {
-                _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
-                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
-              });
-
-              if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
-                FirebaseDatabase.instance.ref().child('remainingDistance').set(_remainingDistanceKM_SelectedPath);
-              }
-            }
-
-            setState(() {
-              _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
-            });
-
-            // Update car marker position
-            setState(() {
-              _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
-              Add_Car_Marker(isSelectedSegment);
-
-              if (segmentProgress >= 1.0) {
-                _currentPointIndex = _currentPointIndex + 1;
-                segmentDistanceCoveredKM = 0.0;
-              }
-            });
-
-            // Stop forward movement at the end of the path
-            if (_currentPointIndex >= path.length) {
-              _isMoving = false;
-              timer.cancel();
-              if (totalDistanceCoveredKM_SelectedPath >= _totalDistanceKM) {
-                _onPathComplete();
-              }
-            }
-          }
-        } else {
-          // Backward movement only on previously covered distance
-          if (_currentPointIndex > 0) {
-            LatLng start = path[_currentPointIndex];
-            LatLng end = path[_currentPointIndex - 1];
-            double segmentDistanceKM = calculateonelinedistance(start, end);
-            double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
-            segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-            double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
-            _carPosition = _lerpLatLng(start, end, segmentProgress);
-
-            bool isSelectedSegment = _isSegmentSelected(path, selectedSegments, _currentPointIndex - 1, _isHorizontalDirection ? PathDirection.horizontal : PathDirection.vertical);
-
-            distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
-
-            if (isSelectedSegment) {
-              totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
-              double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
-              setState(() {
-                _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
-                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
-              });
-
-              if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
-                FirebaseDatabase.instance.ref().child('remainingDistance').set(_remainingDistanceKM_SelectedPath);
-              }
-            }
-
-            setState(() {
-              _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
-            });
-
-            // Update car marker position
-            setState(() {
-              _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
-              Add_Car_Marker(isSelectedSegment);
-
-              if (segmentProgress >= 1.0) {
-                _currentPointIndex = _currentPointIndex - 1;
-                segmentDistanceCoveredKM = 0.0;
-              }
-            });
-
-            // Stop backward movement when at the starting point
-            if (_currentPointIndex <= 0) {
-              _isMoving = false;
-              timer.cancel();
-              _onPathComplete();
-            }
-          }
-        }
-      }
-    });
-  }*/
-  void _startManualMovement_UGV(
-      List<LatLng> path, List<List<LatLng>> selectedSegments,
-      {required bool forward}) {
-    if (path.isEmpty || _selectedStartingPoint == null) {
-      print(
-          "Path is empty or starting point not selected, cannot start movement");
-      return;
-    }
-
-    if (_movementTimer != null && _movementTimer!.isActive) {
-      _isMoving = true;
-      return;
-    }
-
-    // Determine the starting point in the path
-    int startingPointIndex =
-        _findClosestPointIndex(path, _selectedStartingPoint!);
-
-    // Set the initial marker position based on the starting point
-    if (!_isMoving) {
-      setState(() {
-        _carPosition = path[startingPointIndex];
-        _currentPointIndex = startingPointIndex;
-      });
-    }
-
-    Add_Car_Marker(_isSegmentSelected(
-        path,
-        selectedSegments,
-        _currentPointIndex,
-        _isHorizontalDirection
-            ? PathDirection.horizontal
-            : PathDirection.vertical));
-
-    double updateInterval = 0.1; // seconds
-    double speed = 10.0; // meters per second
-    double segmentDistanceCoveredKM = 0.0;
-    double totalDistanceCoveredKM_SelectedPath = 0.0;
-
-    // Start the timer to handle movement
-    _movementTimer = Timer.periodic(
-        Duration(milliseconds: (updateInterval * 1000).toInt()), (timer) async {
-      if (_isMoving) {
-        // Forward movement logic
-        if (forward) {
-          // Traverse the path forward from the selected starting point
-          if (_currentPointIndex < path.length - 1) {
-            LatLng start = path[_currentPointIndex];
-            LatLng end = path[_currentPointIndex + 1];
-            double segmentDistanceKM = calculateonelinedistance(start, end);
-            double distanceCoveredInThisTickKM =
-                (speed * updateInterval) / 1000.0;
-            segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-
-            double segmentProgress =
-                (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
-            _carPosition = _lerpLatLng(start, end, segmentProgress);
-
-            bool isSelectedSegment = _isSegmentSelected(
-                path,
-                selectedSegments,
-                _currentPointIndex,
-                _isHorizontalDirection
-                    ? PathDirection.horizontal
-                    : PathDirection.vertical);
-
-            if (isSelectedSegment) {
-              totalDistanceCoveredKM_SelectedPath +=
-                  distanceCoveredInThisTickKM;
-              double remainingDistanceKM_SelectedPath =
-                  _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
-              setState(() {
-                _remainingDistanceKM_SelectedPath =
-                    remainingDistanceKM_SelectedPath.clamp(
-                        0.0, _totalDistanceKM);
-                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
-              });
-            }
-
-            setState(() {
-              _markers.removeWhere(
-                  (marker) => marker.markerId == const MarkerId('car'));
-              Add_Car_Marker(isSelectedSegment);
-
-              // If the current segment is fully traversed, move to the next one
-              if (segmentProgress >= 1.0) {
-                _currentPointIndex++;
-                segmentDistanceCoveredKM = 0.0; // Reset the segment distance
-              }
-            });
-
-            // When the last point is reached, stop the movement
-            if (_currentPointIndex >= path.length - 1) {
-              _isMoving = false;
-              timer.cancel();
-              _onPathComplete();
-            }
-          } else {
-            _isMoving = false;
-            timer.cancel();
-            _onPathComplete();
-          }
-        } else {
-          // Backward movement logic (same as before)
-          if (_currentPointIndex > 0) {
-            LatLng start = path[_currentPointIndex];
-            LatLng end = path[_currentPointIndex - 1];
-            double segmentDistanceKM = calculateonelinedistance(start, end);
-            double distanceCoveredInThisTickKM =
-                (speed * updateInterval) / 1000.0;
-            segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-
-            double segmentProgress =
-                (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
-            _carPosition = _lerpLatLng(start, end, segmentProgress);
-
-            bool isSelectedSegment = _isSegmentSelected(
-                path,
-                selectedSegments,
-                _currentPointIndex - 1,
-                _isHorizontalDirection
-                    ? PathDirection.horizontal
-                    : PathDirection.vertical);
-
-            setState(() {
-              _markers.removeWhere(
-                  (marker) => marker.markerId == const MarkerId('car'));
-              Add_Car_Marker(isSelectedSegment);
-
-              // If the current segment is fully traversed, move to the previous one
-              if (segmentProgress >= 1.0) {
-                _currentPointIndex--;
-                segmentDistanceCoveredKM = 0.0;
-              }
-            });
-
-            // When the first point is reached, stop the movement
-            if (_currentPointIndex <= 0) {
-              _isMoving = false;
-              timer.cancel();
-              _onPathComplete();
-            }
-          } else {
-            _isMoving = false;
-            timer.cancel();
-            _onPathComplete();
-          }
-        }
-      }
-    });
-  }
-
-// Call this function when the button is released to stop the movement
-  void stopMovement() {
-    _isMoving = false;
-    _movementTimer?.cancel();
-  }
-
-  void _startManualMovement_UAV(List<List<LatLng>> selectedSegments,
-      {required bool forward}) {
-    if (selectedSegments.isEmpty || _selectedStartingPoint == null) {
-      print(
-          "Path is empty or starting point not selected, cannot start movement");
-      return;
-    }
-
-    // Set the initial position based on the selected point from dropdown
-    if (!_isMoving) {
-      // Find the closest point to the selected starting point in the selected path segment
-      int startingPointIndex =
-          _findClosestPointIndex(selectedSegments[0], _selectedStartingPoint!);
-      _currentPointIndex =
-          startingPointIndex; // Track the point in the current segment
-      _carPosition = selectedSegments[_currentSegmentIndex]
-          [_currentPointIndex]; // Set car position
-    }
-
-    // Add car marker only on selected paths
-    Add_Car_Marker(_isSegmentSelected(selectedSegments[_currentSegmentIndex],
-        selectedSegments, _currentPointIndex, PathDirection.horizontal));
-
-    // Start the movement
-    _moveUAV(forward);
-  }
-
-  void _moveUAV(bool forward) {
-    if (forward) {
-      // Forward movement logic across all segments
-      if (_currentSegmentIndex < _selectedPathsQueue.length) {
-        List<LatLng> currentSegment = _selectedPathsQueue[_currentSegmentIndex];
-
-        if (_currentPointIndex < currentSegment.length - 1) {
-          LatLng start = currentSegment[_currentPointIndex];
-          LatLng end = currentSegment[_currentPointIndex + 1];
-
-          double segmentDistanceKM = calculateonelinedistance(start, end);
-          double distanceCoveredInThisTickKM =
-              (speed * updateInterval) / 1000.0;
-          segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-
-          double segmentProgress =
-              (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
-          _carPosition = _lerpLatLng(start, end, segmentProgress);
-
-          bool isSelectedSegment = _isSegmentSelected(
-              currentSegment,
-              _selectedPathsQueue,
-              _currentPointIndex,
-              PathDirection.horizontal);
-
-          // Update distance only if moving forward
-          if (forward) {
-            distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
-          }
-
-          if (isSelectedSegment) {
-            totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
-            double remainingDistanceKM_SelectedPath =
-                _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
-
-            _remainingDistanceKM_SelectedPath =
-                remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
-            _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
-
-            if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
-              FirebaseDatabase.instance
-                  .ref()
-                  .child('remainingDistance')
-                  .set(_remainingDistanceKM_SelectedPath);
-            }
-          }
-
-          _remainingDistanceKM_TotalPath =
-              (totalZigzagPathKm - distanceCoveredInWholeJourney)
-                  .clamp(0.0, totalZigzagPathKm);
-
-          // Update car marker
-          _markers.removeWhere(
-              (marker) => marker.markerId == const MarkerId('car'));
-          Add_Car_Marker(isSelectedSegment);
-
-          // Move to the next point if the segment is completed
-          if (segmentProgress >= 1.0) {
-            _currentPointIndex += 1;
-            segmentDistanceCoveredKM = 0.0;
-          }
-        } else {
-          // Move to the next segment if the current one is completed
-          _currentSegmentIndex += 1;
-          _currentPointIndex = 0; // Reset point index for the next segment
-        }
-
-        // Stop movement at the end of the last segment
-        if (_currentSegmentIndex >= _selectedPathsQueue.length - 1) {
-          _isMoving = false;
-          _onPathComplete(); // Trigger on path completion
-        }
-      }
-    } else {
-      // Backward movement logic across all segments
-      if (_currentSegmentIndex >= 0) {
-        List<LatLng> currentSegment = _selectedPathsQueue[_currentSegmentIndex];
-
-        if (_currentPointIndex > 0) {
-          LatLng start = currentSegment[_currentPointIndex];
-          LatLng end = currentSegment[_currentPointIndex - 1];
-
-          double segmentDistanceKM = calculateonelinedistance(start, end);
-          double distanceCoveredInThisTickKM =
-              (speed * updateInterval) / 1000.0;
-          segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-
-          double segmentProgress =
-              (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
-          _carPosition = _lerpLatLng(start, end, segmentProgress);
-
-          bool isSelectedSegment = _isSegmentSelected(
-              currentSegment,
-              _selectedPathsQueue,
-              _currentPointIndex - 1,
-              PathDirection.horizontal);
-
-          // Distance should still increase even when moving backward
-          distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
-
-          if (isSelectedSegment) {
-            totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
-            double remainingDistanceKM_SelectedPath =
-                _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
-
-            _remainingDistanceKM_SelectedPath =
-                remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
-            _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
-
-            if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
-              FirebaseDatabase.instance
-                  .ref()
-                  .child('remainingDistance')
-                  .set(_remainingDistanceKM_SelectedPath);
-            }
-          }
-
-          _remainingDistanceKM_TotalPath =
-              (totalZigzagPathKm - distanceCoveredInWholeJourney)
-                  .clamp(0.0, totalZigzagPathKm);
-
-          // Update car marker
-          _markers.removeWhere(
-              (marker) => marker.markerId == const MarkerId('car'));
-          Add_Car_Marker(isSelectedSegment);
-
-          // Move to the previous point if the segment is completed
-          if (segmentProgress >= 1.0) {
-            _currentPointIndex -= 1;
-            segmentDistanceCoveredKM = 0.0;
-          }
-        } else {
-          // Move to the previous segment if the current one is completed
-          _currentSegmentIndex -= 1;
-          _currentPointIndex =
-              _selectedPathsQueue[_currentSegmentIndex].length -
-                  1; // Start from the last point of the previous segment
-        }
-
-        // Stop movement at the start of the first segment
-        if (_currentSegmentIndex < 0) {
-          _isMoving = false;
-          _onPathComplete(); // Trigger on path completion
-        }
-      }
-    }
-  }
-
-  /*
-  void _startMovement_UAV(List<List<LatLng>> selectedSegmentsQueue) {
-
-    if (selectedSegmentsQueue.isEmpty || _selectedStartingPoint == null) {
-      print("Selected segments queue is empty or starting point not selected, cannot start movement");
-      return;
-    }
-
-    _isMoving = true;
-
-    // Variables to track the current segment and its index
-    int currentSegmentIndex = 0;
-    List<LatLng> currentSegment = selectedSegmentsQueue[currentSegmentIndex];
-
-    // Find the nearest point on the path to the selected starting point
-    int startingPointIndex = _findClosestPointIndex(currentSegment, _selectedStartingPoint!);
-
-    // Set the car's initial position to the selected starting point
-    setState(() {
-      _carPosition = currentSegment[startingPointIndex];
-      _currentPointIndex = startingPointIndex;
-    });
-
-    // Set the initial movement direction
-    bool movingForward = startingPointIndex < currentSegment.length / 2;
-
-    // Start movement with a timer
-    _movementTimer = Timer.periodic(Duration(milliseconds: (updateInterval * 1000).toInt()), (timer) async {
-      if (_isMoving) {
-        // Handle forward movement
-        if (movingForward) {
-          if (_currentPointIndex < currentSegment.length - 1) {
-            _moveAlongSegment(
-              selectedSegmentsQueue,
-              currentSegment,
-              currentSegmentIndex,
-              forward: true,
-            );
-          } else {
-            // Move to the next segment if the current segment is complete
-            currentSegmentIndex++;
-            if (currentSegmentIndex >= selectedSegmentsQueue.length) {
-              _isMoving = false;
-              timer.cancel();
-              _onPathComplete(); // Path complete handler
-            } else {
-              // Move to the next selected segment
-              currentSegment = selectedSegmentsQueue[currentSegmentIndex];
-              _currentPointIndex = 0; // Start at the beginning of the new segment
-            }
-          }
-        }
-        // Handle reverse movement
-        else {
-          if (_currentPointIndex > 0) {
-            _moveAlongSegment(
-              selectedSegmentsQueue,
-              currentSegment,
-              currentSegmentIndex,
-              forward: false,
-            );
-          } else {
-            // Move to the previous segment if the current one is finished
-            currentSegmentIndex--;
-            if (currentSegmentIndex < 0) {
-              _isMoving = false;
-              timer.cancel();
-              _onPathComplete(); // Path complete handler
-            } else {
-              // Move to the previous selected segment
-              currentSegment = selectedSegmentsQueue[currentSegmentIndex];
-              _currentPointIndex = currentSegment.length - 1; // Start at the end of the new segment
-            }
-          }
-        }
-      }
-    });
-  }
-  void _moveAlongSegment(List<List<LatLng>> selectedSegmentsQueue, List<LatLng> segment, int currentSegmentIndex, {required bool forward}) {
-    LatLng start = segment[_currentPointIndex];
-    LatLng end = forward ? segment[_currentPointIndex + 1] : segment[_currentPointIndex - 1];
-
-    // Calculate segment distances
-    double segmentDistanceKM = calculateonelinedistance(start, end);
-    double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
-    segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-
-    double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
-
-    // Update car's position
-    _carPosition = _lerpLatLng(start, end, segmentProgress);
-
-    bool isSelectedSegment = _isSegmentSelected(segment, selectedSegmentsQueue, _currentPointIndex, PathDirection.horizontal);
-    distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
-
-    // If this is a selected segment, track remaining distance
-    if (isSelectedSegment) {
-      totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
-      double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
-      setState(() {
-        _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
-        _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
-      });
-
-      if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
-        FirebaseDatabase.instance.ref().child('remainingDistance').set(_remainingDistanceKM_SelectedPath);
-      }
-    }
-
-    // Update the marker and progress through the segment
-    setState(() {
-      _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
-      _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
-      Add_Car_Marker(isSelectedSegment);
-
-      if (segmentProgress >= 1.0) {
-        _currentPointIndex += forward ? 1 : -1;
-        segmentDistanceCoveredKM = 0.0; // Reset the distance for the next segment
-      }
-    });
-
-    // End the movement if the end of the current segment is reached
-    /*if ((forward && _currentPointIndex >= segment.length - 1) || (!forward && _currentPointIndex <= 0)) {
-      _isMoving = false;
-      _movementTimer?.cancel();
-      _onPathComplete();
-    }*/
-    // End the movement if the queue is empty or the remaining distance is zero
-    if (_selectedPathsQueue.isEmpty || _remainingDistanceKM_SelectedPath <= 0) {
-      _isMoving = false;
-      _movementTimer?.cancel();
-      _onPathComplete();
-    }
-  }
-*/
-
-// Helper function to find the closest point in the path to the selected starting point
-  /*int _findClosestPointIndex(List<LatLng> path, LatLng startingPoint) {
-    if (path.isEmpty) return -1; // No path, return invalid index
-
-    int closestIndex = 0;
-    double closestDistance = calculateonelinedistance(path[0], startingPoint);
-
-    for (int i = 1; i < path.length; i++) {
-      double distance = calculateonelinedistance(path[i], startingPoint);
-
-      // Compare and find the smallest distance
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        closestIndex = i;
-      }
-    }
-
-    return closestIndex; // Return the index of the closest point
-  }*/
-  /*int _findClosestPointIndex(List<LatLng> path, LatLng targetPoint) {
-    int closestPointIndex = 0;
-    double closestDistance = double.infinity;
-
-    for (int i = 0; i < path.length; i++) {
-      double distance = calculateonelinedistance(path[i], targetPoint);
-
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        closestPointIndex = i;
-      }
-    }
-
-    return closestPointIndex;
-  }*/
-
+  } // Return dstance in kilometers
   int _findClosestPointIndex(List<LatLng> path, LatLng selectedPoint) {
     if (path.isEmpty) return -1; // Return -1 if the path is empty
 
@@ -1285,76 +333,43 @@ class _Fetch_InputState extends State<Fetch_Input>
 
     return closestIndex;
   }
-
   void Selecting_Path_Direction_and_Turn() {
     bool isStartingPointEmpty = false; // Validation flag for the dropdown
-
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setState) {
-            return AlertDialog(
-              titlePadding: EdgeInsets.zero,
-              title: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.indigo[800],
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(20),
-                    topRight: Radius.circular(20),
-                  ),
-                ),
-                child: Text(
-                  'Enter settings',
-                  style: GoogleFonts.poppins(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Enter Turn Length (Default 5.0m)',
-                    style: GoogleFonts.poppins(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.red[800],
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Container(
+            return Consumer<ISSAASProvider>(
+              builder: (context, issaasProvider, child) {
+                bool _isISSAASMode = issaasProvider.isSaas;
+                LatLng _GPSloc = issaasProvider.GPSPostions;
+
+                return AlertDialog(
+                  titlePadding: EdgeInsets.zero,
+                  title: Container(
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      border: Border.all(color: Colors.indigo),
-                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.indigo[800],
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(20),
+                        topRight: Radius.circular(20),
+                      ),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: TextField(
-                      keyboardType: TextInputType.number,
-                      onChanged: (value) {
-                        setState(() {
-                          _turnLength = double.tryParse(value) ?? 5.0;
-                        });
-                      },
-                      decoration: InputDecoration(
-                        border: InputBorder.none,
-                        hintText: _turnLength.toString(),
-                        hintStyle: GoogleFonts.poppins(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.black45,
-                        ),
+                    child: Text(
+                      'Enter settings',
+                      style: GoogleFonts.poppins(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  Column(
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'Choose Path Direction',
+                        'Enter Turn Length (Default 5.0m)',
                         style: GoogleFonts.poppins(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
@@ -1362,178 +377,231 @@ class _Fetch_InputState extends State<Fetch_Input>
                         ),
                       ),
                       const SizedBox(height: 5),
-                      Row(
+                      Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.indigo),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: TextField(
+                          keyboardType: TextInputType.number,
+                          onChanged: (value) {
+                            setState(() {
+                              _turnLength = double.tryParse(value) ?? 5.0;
+                            });
+                          },
+                          decoration: InputDecoration(
+                            border: InputBorder.none,
+                            hintText: _turnLength.toString(),
+                            hintStyle: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.black45,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Column(
                         children: [
-                          Radio<PathDirection>(
-                            value: PathDirection.horizontal,
-                            groupValue: _selectedDirection,
-                            onChanged: (PathDirection? value) {
-                              setState(() {
-                                _selectedDirection = value!;
-                                _isHorizontalDirection =
-                                    (value == PathDirection.horizontal);
-                              });
-                            },
-                          ),
                           Text(
-                            'Horizontal',
+                            'Choose Path Direction',
                             style: GoogleFonts.poppins(
-                              fontSize: 14,
+                              fontSize: 15,
                               fontWeight: FontWeight.w600,
-                              color: Colors.black,
+                              color: Colors.red[800],
                             ),
                           ),
-                          Radio<PathDirection>(
-                            value: PathDirection.vertical,
-                            groupValue: _selectedDirection,
-                            onChanged: (PathDirection? value) {
-                              setState(() {
-                                _selectedDirection = value!;
-                                _isHorizontalDirection =
-                                    (value == PathDirection.horizontal);
-                              });
-                            },
-                          ),
-                          Text(
-                            'Vertical',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black,
-                            ),
+                          const SizedBox(height: 5),
+                          Row(
+                            children: [
+                              Radio<PathDirection>(
+                                value: PathDirection.horizontal,
+                                groupValue: _selectedDirection,
+                                onChanged: (PathDirection? value) {
+                                  setState(() {
+                                    _selectedDirection = value!;
+                                    _isHorizontalDirection =
+                                        (value == PathDirection.horizontal);
+                                  });
+                                },
+                              ),
+                              Text(
+                                'Horizontal',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black,
+                                ),
+                              ),
+                              Radio<PathDirection>(
+                                value: PathDirection.vertical,
+                                groupValue: _selectedDirection,
+                                onChanged: (PathDirection? value) {
+                                  setState(() {
+                                    _selectedDirection = value!;
+                                    _isHorizontalDirection =
+                                        (value == PathDirection.horizontal);
+                                  });
+                                },
+                              ),
+                              Text(
+                                'Vertical',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Choose Starting Point',
-                    style: GoogleFonts.poppins(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.red[800],
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.indigo),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: DropdownButton<LatLng>(
-                      value: _selectedStartingPoint,
-                      isExpanded: true,
-                      items: (_isCustomMode
-                              ? _markers
-                              : _markers.sublist(0, _markers.length - 1))
-                          .map((marker) {
-                        return DropdownMenuItem<LatLng>(
-                          value: marker.position,
-                          child: Text(marker.markerId.value),
-                        );
-                      }).toList(),
-                      onChanged: (LatLng? newValue) {
-                        setState(() {
-                          _selectedStartingPoint = newValue;
-                          _selectedMarkerId = _markers
-                              .firstWhere(
-                                  (marker) => marker.position == newValue)
-                              .markerId;
-                          isStartingPointEmpty = false; // Reset error state
-
-                          // Update marker colors
-                          _markers = _markers.map((marker) {
-                            if (marker.markerId == _selectedMarkerId) {
-                              return marker.copyWith(
-                                iconParam:
-                                    BitmapDescriptor.defaultMarkerWithHue(
-                                        BitmapDescriptor.hueGreen),
-                              );
-                            } else {
-                              return marker.copyWith(
-                                iconParam:
-                                    BitmapDescriptor.defaultMarkerWithHue(
-                                        BitmapDescriptor.hueAzure),
-                              );
-                            }
-                          }).toList();
-                        });
-                      },
-                    ),
-                  ),
-                  if (isStartingPointEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text(
-                        'Starting point is Required',
+                      const SizedBox(height: 10),
+                      Text(
+                        'Choose Starting Point',
                         style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.red[600],
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.red[800],
                         ),
                       ),
-                    ),
-                ],
-              ),
-              actions: <Widget>[
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.indigo[800],
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  onPressed: () {
-                    if (_selectedStartingPoint == null) {
-                      setState(() {
-                        isStartingPointEmpty = true; // Show error message
-                      });
-                    } else {
-                      Navigator.of(context).pop();
-                      LatLng initialPosition = _selectedStartingPoint!;
-                      extractLatLngPoints();
-                      if (_selectedDirection == PathDirection.vertical) {
-                        _isHorizontalDirection = false; // Set direction flag
-                        dronepath_Vertical(
-                            polygonPoints, pathWidth, _selectedStartingPoint!);
-                      } else {
-                        _isHorizontalDirection = true; // Set direction flag
-                        dronepath_Horizontal(
-                            polygonPoints, pathWidth, _selectedStartingPoint!);
-                      }
+                      const SizedBox(height: 5),
+                      Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.indigo),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: DropdownButton<LatLng>(
+                          value: _selectedStartingPoint,
+                          isExpanded: true,
+                          items: (_isCustomMode
+                              ? _markers
+                              : _markers.sublist(0, _markers.length - 1))
+                              .map((marker) {
+                            return DropdownMenuItem<LatLng>(
+                              value: marker.position,
+                              child: Text(marker.markerId.value),
+                            );
+                          }).toList(),
+                          onChanged: (LatLng? newValue) {
+                            setState(() {
+                              _selectedStartingPoint = newValue;
+                              _selectedMarkerId = _markers
+                                  .firstWhere(
+                                      (marker) => marker.position == newValue)
+                                  .markerId;
+                              isStartingPointEmpty = false; // Reset error state
 
-                      _closePolygon(_turnLength);
-                      setup_hardware();
-                    }
-                  },
-                  child: Center(
-                    child: Text(
-                      'Generate Path',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white,
+                              // Update marker colors
+                              _markers = _markers.map((marker) {
+                                if (marker.markerId == _selectedMarkerId) {
+                                  return marker.copyWith(
+                                    iconParam:
+                                    BitmapDescriptor.defaultMarkerWithHue(
+                                        BitmapDescriptor.hueGreen),
+                                  );
+                                } else {
+                                  return marker.copyWith(
+                                    iconParam:
+                                    BitmapDescriptor.defaultMarkerWithHue(
+                                        BitmapDescriptor.hueAzure),
+                                  );
+                                }
+                              }).toList();
+                            });
+                          },
+                        ),
                       ),
-                    ),
+                      if (isStartingPointEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: Text(
+                            'Starting point is Required',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.red[600],
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                ),
-              ],
+                  actions: <Widget>[
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo[800],
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      onPressed: () {
+                        // Assign current LatLng if in ISSAAS mode
+                        if (_isISSAASMode) {
+                          _selectedStartingPoint = _GPSloc;
+                        }
+
+                        // Check if starting point is selected
+                        if (_selectedStartingPoint == null) {
+                          setState(() {
+                            isStartingPointEmpty = true; // Show error message
+                          });
+                        } else {
+                          Navigator.of(context).pop();
+
+                          // Proceed with path generation
+                          LatLng initialPosition = _selectedStartingPoint!;
+                          extractLatLngPoints();
+
+                          // Set path direction and generate path accordingly
+                          if (_selectedDirection == PathDirection.vertical) {
+                            _isHorizontalDirection = false;
+                            dronepath_Vertical(polygonPoints, pathWidth,
+                                _selectedStartingPoint!);
+                          } else {
+                            _isHorizontalDirection = true;
+                            dronepath_Horizontal(polygonPoints, pathWidth,
+                                _selectedStartingPoint!);
+                          }
+
+                          // Finalize setup
+                          _closePolygon(_turnLength);
+                          setup_hardware();
+                        }
+                      },
+                      child: Center(
+                        child: Text(
+                          'Generate Path',
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    )
+                  ],
+                );
+              },
             );
           },
         );
       },
     );
   }
-
   void _onPathComplete() {
     // Clear all paths and stop movement
     setState(() {
       _isMoving = false;
       _movementTimer?.cancel();
-      _markers
-          .removeWhere((marker) => marker.markerId == const MarkerId('car'));
+      if(widget.groundMode) {
+        _markers
+            .removeWhere((marker) => marker.markerId == const MarkerId('car'));
+      }else{
+        _markers
+            .removeWhere((marker) => marker.markerId == const MarkerId('uav'));
+      }
     });
 
     _screenshotController.capture().then((Uint8List? capturedBytes) {
@@ -1545,10 +613,8 @@ class _Fetch_InputState extends State<Fetch_Input>
       print('Error capturing screenshot: $e');
     });
   }
-
 // Check if the current segment is part of the selected route
-  bool _isSegmentSelected(List<LatLng> path,
-      List<List<LatLng>> selectedSegments, int index, PathDirection direction) {
+  bool _isSegmentSelected(List<LatLng> path, List<List<LatLng>> selectedSegments, int index, PathDirection direction) {
     if (index < path.length - 1) {
       LatLng start = path[index];
       LatLng end = path[index + 1];
@@ -1584,7 +650,22 @@ class _Fetch_InputState extends State<Fetch_Input>
       //'images/ugv_active.png', // Replace with your actual asset path
     );
   }
+  Future<void> _loadCarIcons_UAV() async {
+    // Load the image from your assets
+    const ImageConfiguration imageConfiguration = ImageConfiguration(
+      size: Size(20, 20),
+    );
+    uav_active = await BitmapDescriptor.fromAssetImage(
+      imageConfiguration,
 
+      'images/uav_active.png', // Replace with your actual asset path
+    );
+    uav_dead = await BitmapDescriptor.fromAssetImage(
+      imageConfiguration,
+      'images/uav_dead.png', // Replace with your actual asset path
+      //'images/ugv_active.png', // Replace with your actual asset path
+    );
+  }
   Future<void> Add_Car_Marker(bool isSelectedSegment) async {
     setState(() {
       _markers.add(Marker(
@@ -1597,6 +678,17 @@ class _Fetch_InputState extends State<Fetch_Input>
     });
   }
 
+  Future<void> Add_Car_Marker_UAV(bool isSelectedSegment) async {
+    setState(() {
+      _markers.add(Marker(
+        markerId: const MarkerId('uav'),
+        position: LatLng(_carPosition.latitude, _carPosition.longitude),
+        icon: isSelectedSegment
+            ? uav_active
+            : uav_dead, // Set the car marker based on the segment selection
+      ));
+    });
+  }
 // Check if two horizontal segments are equal
   bool _isHorizontalSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
     return (segment1[0].latitude == segment2[0].latitude &&
@@ -1612,7 +704,6 @@ class _Fetch_InputState extends State<Fetch_Input>
                 segment1[0].longitude == segment2[1].longitude &&
                     segment1[1].longitude == segment2[0].longitude));
   }
-
 // Check if two vertical segments are equal
   bool _isVerticalSegmentEqual(List<LatLng> segment1, List<LatLng> segment2) {
     return (segment1[0].longitude == segment2[0].longitude &&
@@ -1628,7 +719,6 @@ class _Fetch_InputState extends State<Fetch_Input>
                 segment1[0].latitude == segment2[1].latitude &&
                     segment1[1].latitude == segment2[0].latitude));
   }
-
   void ShowSuccessDialog(Uint8List screenshotBytes) {
     showDialog(
       context: context,
@@ -1708,7 +798,6 @@ class _Fetch_InputState extends State<Fetch_Input>
       },
     );
   }
-
   void setup_hardware() {
     showDialog(
       context: context,
@@ -1886,31 +975,42 @@ class _Fetch_InputState extends State<Fetch_Input>
                   ),
                 ),
                 const SizedBox(height: 10),
-                RichText(
-                  text: TextSpan(
-                    children: [
-                      TextSpan(
-                        text: 'Your Starting Point is: ',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w400,
-                          color: Colors.black, // Black color for the label
-                        ),
+                Consumer<ISSAASProvider>(
+
+                  builder: (context, issaasProvider, child) {
+                    bool _isISSAASMode = issaasProvider.isSaas;
+                    LatLng _GPSloc = issaasProvider.GPSPostions;
+                  return RichText(
+                      text: TextSpan(
+                        children: [
+                          TextSpan(
+                            text: 'Your Starting Point is: ',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w400,
+                              color: Colors.black,
+                            ),
+                          ),
+                          TextSpan(
+                            text: _isISSAASMode
+                                ? _GPSloc != null
+                                ? 'Lat: ${_GPSloc.latitude.toStringAsFixed(3)}, Lng: ${_GPSloc.longitude.toStringAsFixed(3)}'
+                                : 'None'
+                                : _selectedStartingPoint != null
+                                ? 'Lat: ${_selectedStartingPoint!.latitude.toStringAsFixed(3)}, Lng: ${_selectedStartingPoint!.longitude.toStringAsFixed(3)}'
+                                : 'None',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.indigo[800],
+                            ),
+                          ),
+                        ],
                       ),
-                      TextSpan(
-                        text: _selectedStartingPoint != null
-                            ? 'Lat: ${_selectedStartingPoint!.latitude.toStringAsFixed(3)}, Lng: ${_selectedStartingPoint!.longitude.toStringAsFixed(3)}'
-                            : 'None',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.indigo[
-                              800], // Indigo color for the starting point value
-                        ),
-                      ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
+
               ],
             ),
             actions: <Widget>[
@@ -1997,7 +1097,6 @@ class _Fetch_InputState extends State<Fetch_Input>
       },
     );
   }
-
   void _showHorizontalRoutesDialog() {
     List<int> selectedSegments = [];
 
@@ -2146,23 +1245,22 @@ class _Fetch_InputState extends State<Fetch_Input>
                           if (widget.groundMode) {
                             if (widget.isManualControl) {
                               // Call manual movement function for UGV if manual control is enabled
-                              _startManualMovement_UGV(
-                                  _dronepath, _selectedPathsQueue,
-                                  forward: true);
+                              _startManualMovement_UGV(_dronepath, _selectedPathsQueue, forward: true);
                             } else {
                               // Call the default movement function for UGV otherwise
-                              _startMovement_UGV(
-                                  _dronepath, _selectedPathsQueue);
+                               _startMovement_UGV(_dronepath, _selectedPathsQueue);
                             }
                           } else {
                             if (widget.isManualControl) {
                               // Call manual movement function if manual control is enabled
-                              _startManualMovement_UAV(_selectedPathsQueue,
-                                  forward: true);
+                                _startManualMovement_UAV(_selectedPathsQueue, forward: true);
                             } else {
                               // Call the default movement function otherwise
                               _startMovement_UAV(_selectedPathsQueue);
                             }
+                          }
+                          if (context.read<ISSAASProvider>().isSaas) {
+                            _startMovement_GPS(_dronepath, _selectedPathsQueue);
                           }
                         }
                       },
@@ -2184,7 +1282,6 @@ class _Fetch_InputState extends State<Fetch_Input>
       },
     );
   }
-
   void _showVerticalRoutesDialog() {
     List<int> selectedSegments = [];
     List<List<LatLng>> verticalPaths = _allPaths;
@@ -2329,20 +1426,22 @@ class _Fetch_InputState extends State<Fetch_Input>
                           if (widget.groundMode) {
                             if (widget.isManualControl) {
                               // Call manual movement function for UGV if manual control is enabled
-                              //  _startManualMovement_UGV(_dronepath, _selectedPathsQueue, forward: true);
+                              _startManualMovement_UGV(_dronepath, _selectedPathsQueue, forward: true);
                             } else {
                               // Call the default movement function for UGV otherwise
-                              //  _startMovement_UGV(_dronepath, _selectedPathsQueue);
+                               _startMovement_UGV(_dronepath, _selectedPathsQueue);
                             }
                           } else {
                             if (widget.isManualControl) {
                               // Call manual movement function if manual control is enabled
-                              _startManualMovement_UAV(_selectedPathsQueue,
-                                  forward: true);
+                              _startManualMovement_UAV(_selectedPathsQueue, forward: true);
                             } else {
                               // Call the default movement function otherwise
                               _startMovement_UAV(_selectedPathsQueue);
                             }
+                          }
+                          if (context.read<ISSAASProvider>().isSaas) {
+                            _startMovement_GPS(_dronepath, _selectedPathsQueue);
                           }
                         }
                       },
@@ -2364,9 +1463,7 @@ class _Fetch_InputState extends State<Fetch_Input>
       },
     );
   }
-
-  void _updatePolylineColors(List<int> selectedSegments,
-      {bool isVertical = false}) {
+  void _updatePolylineColors(List<int> selectedSegments, {bool isVertical = false}) {
     setState(() {
       // Update horizontal paths
       if (!isVertical) {
@@ -2402,8 +1499,7 @@ class _Fetch_InputState extends State<Fetch_Input>
       }
     });
   }
-
-  // Warning dialog when no routes are selected
+  // Warning dialog when no routes are selecte
   void _showWarningDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -2444,9 +1540,7 @@ class _Fetch_InputState extends State<Fetch_Input>
       },
     );
   }
-
-  void dronepath_Horizontal(
-      List<LatLng> polygon, double pathWidth, LatLng startPoint) {
+  void dronepath_Horizontal(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
 
     List<LatLng> sortedByLat = List.from(polygon)
@@ -2537,9 +1631,7 @@ class _Fetch_InputState extends State<Fetch_Input>
       totalZigzagPathKm = totalDistancezigzagKm;
     });
   }
-
-  void dronepath_Vertical(
-      List<LatLng> polygon, double pathWidth, LatLng startPoint) {
+  void dronepath_Vertical(List<LatLng> polygon, double pathWidth, LatLng startPoint) {
     if (polygon.isEmpty) return;
 
     List<LatLng> sortedByLng = List.from(polygon)
@@ -2624,14 +1716,12 @@ class _Fetch_InputState extends State<Fetch_Input>
       totalZigzagPathKm = totalDistancezigzagKm;
     });
   }
-
 // Extracting LatLng points from markers
   void extractLatLngPoints() {
     if (polygons.isNotEmpty) {
       polygonPoints = polygons.first.points.toList();
     }
   }
-
   Future<void> _closePolygon(double turnLength) async {
     setState(() {
       _ismanual = true;
@@ -2664,7 +1754,6 @@ class _Fetch_InputState extends State<Fetch_Input>
       }
     }
   }
-
   Future<void> _requestLocationPermission() async {
     bool _serviceEnabled;
     PermissionStatus _permissionGranted;
@@ -2683,7 +1772,6 @@ class _Fetch_InputState extends State<Fetch_Input>
       }
     }
     _currentLocation = await _location.getLocation();
-    setState(() {});
   }
 
   void _initializeFirebaseListener() {
@@ -2703,16 +1791,15 @@ class _Fetch_InputState extends State<Fetch_Input>
       }
     });
   }
-
   void _updateMarkerPosition(double lat, double long) {
     setState(() {
       _currentPosition = LatLng(lat, long);
     });
   }
-
   void _hideKeyboard() {
     FocusScope.of(context).previousFocus();
   }
+
 
   void _showInputSelectionPopup() {
     showModalBottomSheet(
@@ -2770,8 +1857,7 @@ class _Fetch_InputState extends State<Fetch_Input>
                 setState(() {
                   _isCustomMode = true;
                   // _ismanual = true;
-                  _selectedMethod =
-                      'Placing Markers Manually'; // Store selection
+                  _selectedMethod = 'Placing Markers Manually'; // Store selection
                 });
                 Navigator.pop(context);
               },
@@ -2834,9 +1920,9 @@ class _Fetch_InputState extends State<Fetch_Input>
       },
     );
   }
-
   Future<void> _showFileSelectionPopup() async {
-    List<String> cloudFiles = await _fetchCloudFiles(); // Get list of cloud files
+    List<String> cloudFiles =
+        await _fetchCloudFiles(); // Get list of cloud files
 
     showDialog(
       context: context,
@@ -3051,7 +2137,8 @@ class _Fetch_InputState extends State<Fetch_Input>
                   }
                   Navigator.pop(context);
                 } else {
-                  _showSnackbar(context, 'Please Select At least One file from Local Or Cloud Source');
+                  _showSnackbar(context,
+                      'Please Select At least One file from Local Or Cloud Source');
                 }
               },
               child: Text(
@@ -3063,9 +2150,6 @@ class _Fetch_InputState extends State<Fetch_Input>
                 ),
               ),
             ),
-
-
-
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.indigo[800],
@@ -3075,7 +2159,6 @@ class _Fetch_InputState extends State<Fetch_Input>
               ),
               onPressed: () {
                 Navigator.pop(context);
-
               },
               child: Text(
                 'Cancel',
@@ -3091,7 +2174,6 @@ class _Fetch_InputState extends State<Fetch_Input>
       },
     );
   }
-
   Future<void> _loadMarkersFromCloudFile(String fileName) async {
     try {
       final Reference fileRef = FirebaseStorage.instance.ref().child(fileName);
@@ -3146,7 +2228,6 @@ class _Fetch_InputState extends State<Fetch_Input>
       print('Error loading markers from cloud file: $e');
     }
   }
-
 //Widget to make a button which will trigger the functions SELECTING_PATH_AND_DIRECTION()
   Future<void> _loadMarkersFromFile(String filePath) async {
     try {
@@ -3207,7 +2288,6 @@ class _Fetch_InputState extends State<Fetch_Input>
       print("Error reading file: $e");
     }
   }
-
   Future<List<String>> _fetchCloudFiles() async {
     List<String> fileNames = [];
     try {
@@ -3221,7 +2301,6 @@ class _Fetch_InputState extends State<Fetch_Input>
     return fileNames;
   }
 // Ensure this method is called when "Cloud" is selected
-
   void _updatePolylines() {
     _polylines.clear();
 
@@ -3254,13 +2333,768 @@ class _Fetch_InputState extends State<Fetch_Input>
       });
     }
   }
+  void stopMovement() {
+    _isMoving = false;
+    _movementTimer?.cancel();
+  }
+  void _startMovement_UGV(List<LatLng> path, List<List<LatLng>> selectedSegments) {
+    if (path.isEmpty || _selectedStartingPoint == null) {
+      print(
+          "Path is empty or starting point not selected, cannot start movement");
+      return;
+    }
+    _isMoving = true;
 
-  void _stopMovement() {
+    // Find the nearest point on the path to the selected starting point
+    int startingPointIndex = _findClosestPointIndex(path, _selectedStartingPoint!);
+
+    // Set the car's initial position to the selected starting point
     setState(() {
-      _isMoving = false;
-      _movementTimer?.cancel();
+      _carPosition = path[startingPointIndex]; // Start from the closest point
+      _currentPointIndex = startingPointIndex;
+    });
+
+    // Decide the direction-specific marker function
+    Add_Car_Marker(_isSegmentSelected(
+        path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
+
+    // Determine movement direction based on starting point
+    bool movingForward = startingPointIndex < path.length / 2;
+
+    // Start movement with timer
+    _movementTimer = Timer.periodic(
+        Duration(milliseconds: (updateInterval * 1000).toInt()), (timer) async {
+      if (_isMoving) {
+        if (movingForward) {
+          if (_currentPointIndex < path.length - 1) {
+            LatLng start = path[_currentPointIndex];
+            LatLng end = path[_currentPointIndex + 1];
+            double segmentDistanceKM = calculateonelinedistance(start, end);
+            double distanceCoveredInThisTickKM =
+                (speed * updateInterval) / 1000.0;
+            segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+            double segmentProgress =
+                (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+            _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+            bool isSelectedSegment = _isSegmentSelected(
+              path,
+              selectedSegments,
+              _currentPointIndex,
+              _isHorizontalDirection
+                  ? PathDirection.horizontal
+                  : PathDirection.vertical,
+            );
+
+            distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+
+            if (isSelectedSegment) {
+              totalDistanceCoveredKM_SelectedPath +=
+                  distanceCoveredInThisTickKM;
+              double remainingDistanceKM_SelectedPath =
+                  _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+              setState(() {
+                _remainingDistanceKM_SelectedPath =
+                    remainingDistanceKM_SelectedPath.clamp(
+                        0.0, _totalDistanceKM);
+                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+              });
+
+              if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
+                FirebaseDatabase.instance
+                    .ref()
+                    .child('remainingDistance')
+                    .set(_remainingDistanceKM_SelectedPath);
+              }
+            }
+
+            setState(() {
+              _remainingDistanceKM_TotalPath =
+                  (totalZigzagPathKm - distanceCoveredInWholeJourney)
+                      .clamp(0.0, totalZigzagPathKm);
+            });
+
+            // Update car marker position
+            setState(() {
+              _markers.removeWhere(
+                  (marker) => marker.markerId == const MarkerId('car'));
+              Add_Car_Marker(isSelectedSegment);
+
+              if (segmentProgress >= 1.0) {
+                _currentPointIndex++;
+                segmentDistanceCoveredKM = 0.0;
+              }
+            });
+
+            if (_currentPointIndex >= path.length - 1) {
+              _isMoving = false;
+              timer.cancel();
+              _onPathComplete();
+            }
+          } else {
+            _movementTimer?.cancel();
+            _isMoving = false;
+            timer.cancel();
+            _onPathComplete();
+          }
+        } else {
+          if (_currentPointIndex > 0) {
+            LatLng start = path[_currentPointIndex];
+            LatLng end = path[_currentPointIndex - 1];
+            double segmentDistanceKM = calculateonelinedistance(start, end);
+            double distanceCoveredInThisTickKM =
+                (speed * updateInterval) / 1000.0;
+            segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+            double segmentProgress =
+                (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+            _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+            bool isSelectedSegment = _isSegmentSelected(
+              path,
+              selectedSegments,
+              _currentPointIndex - 1,
+              _isHorizontalDirection
+                  ? PathDirection.horizontal
+                  : PathDirection.vertical,
+            );
+
+            distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+
+            if (isSelectedSegment) {
+              totalDistanceCoveredKM_SelectedPath +=
+                  distanceCoveredInThisTickKM;
+              double remainingDistanceKM_SelectedPath =
+                  _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+              setState(() {
+                _remainingDistanceKM_SelectedPath =
+                    remainingDistanceKM_SelectedPath.clamp(
+                        0.0, _totalDistanceKM);
+                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+              });
+
+              if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
+                FirebaseDatabase.instance
+                    .ref()
+                    .child('remainingDistance')
+                    .set(_remainingDistanceKM_SelectedPath);
+              }
+            }
+
+            setState(() {
+              _remainingDistanceKM_TotalPath =
+                  (totalZigzagPathKm - distanceCoveredInWholeJourney)
+                      .clamp(0.0, totalZigzagPathKm);
+            });
+
+            // Update car marker position
+            setState(() {
+              _markers.removeWhere(
+                  (marker) => marker.markerId == const MarkerId('car'));
+
+              Add_Car_Marker(isSelectedSegment);
+
+              if (segmentProgress >= 1.0) {
+                _currentPointIndex--;
+                segmentDistanceCoveredKM = 0.0;
+              }
+            });
+
+            if (_currentPointIndex <= 0) {
+              _isMoving = false;
+              timer.cancel();
+              _onPathComplete();
+            }
+          } else {
+            _movementTimer?.cancel();
+            _isMoving = false;
+            timer.cancel();
+            _onPathComplete();
+          }
+        }
+      }
     });
   }
+  void _startManualMovement_UGV(List<LatLng> path, List<List<LatLng>> selectedSegments, {required bool forward}) {
+    if (path.isEmpty || _selectedStartingPoint == null) {
+      print("Path is empty or starting point not selected, cannot start movement");
+      return;
+    }
+
+    if (_movementTimer != null && _movementTimer!.isActive) {
+      _isMoving = true;
+      return;
+    }
+
+    // Determine the starting point in the path
+    int startingPointIndex = _findClosestPointIndex(path, _selectedStartingPoint!);
+
+    // Set the initial marker position based on the starting point
+    if (!_isMoving) {
+      setState(() {
+        _carPosition = path[startingPointIndex];
+        _currentPointIndex = startingPointIndex;
+      });
+    }
+
+    // Decide the direction-specific marker function
+    Add_Car_Marker(_isSegmentSelected(
+        path,
+        selectedSegments,
+        _currentPointIndex,
+        _isHorizontalDirection ? PathDirection.horizontal : PathDirection.vertical));
+
+    double updateInterval = 0.1; // seconds
+    double speed = 10.0; // meters per second
+
+    // Start movement with timer
+    _movementTimer = Timer.periodic(
+        Duration(milliseconds: (updateInterval * 1000).toInt()), (timer) async {
+      if (_isMoving) {
+        // Forward movement logic
+        if (forward) {
+          // Traverse the path forward from the selected starting point
+          if (_currentPointIndex < path.length - 1) {
+            LatLng start = path[_currentPointIndex];
+            LatLng end = path[_currentPointIndex + 1];
+            double segmentDistanceKM = calculateonelinedistance(start, end);
+            double distanceCoveredInThisTickKM =
+                (speed * updateInterval) / 1000.0;
+            segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+            double segmentProgress =
+            (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+            _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+            bool isSelectedSegment = _isSegmentSelected(
+              path,
+              selectedSegments,
+              _currentPointIndex,
+              _isHorizontalDirection
+                  ? PathDirection.horizontal
+                  : PathDirection.vertical,
+            );
+
+            distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+
+            if (isSelectedSegment) {
+              totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
+              double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+              setState(() {
+                _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
+                _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+              });
+
+              if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
+                FirebaseDatabase.instance
+                    .ref()
+                    .child('remainingDistance')
+                    .set(_remainingDistanceKM_SelectedPath);
+              }
+            }
+
+            setState(() {
+              _remainingDistanceKM_TotalPath =
+                  (totalZigzagPathKm - distanceCoveredInWholeJourney)
+                      .clamp(0.0, totalZigzagPathKm);
+            });
+
+            // Update car marker position
+            setState(() {
+              _markers.removeWhere(
+                      (marker) => marker.markerId == const MarkerId('car'));
+              Add_Car_Marker(isSelectedSegment);
+
+              if (segmentProgress >= 1.0) {
+                _currentPointIndex++;
+                segmentDistanceCoveredKM = 0.0;
+              }
+            });
+
+            if (_currentPointIndex >= path.length - 1) {
+              _isMoving = false;
+              timer.cancel();
+              _onPathComplete();
+            }
+          } else {
+            _movementTimer?.cancel();
+            _isMoving = false;
+            timer.cancel();
+            _onPathComplete();
+          }
+        } else {
+          if (_currentPointIndex > 0) {
+            LatLng start = path[_currentPointIndex];
+            LatLng end = path[_currentPointIndex - 1];
+            double segmentDistanceKM = calculateonelinedistance(start, end);
+            double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
+            segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+
+            double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+            _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+            bool isSelectedSegment = _isSegmentSelected(
+                path,
+                selectedSegments,
+                _currentPointIndex - 1,
+                _isHorizontalDirection ? PathDirection.horizontal : PathDirection.vertical);
+
+            setState(() {
+              _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
+              Add_Car_Marker(isSelectedSegment);
+
+              if (segmentProgress >= 1.0) {
+                _currentPointIndex--;
+                segmentDistanceCoveredKM = 0.0;
+              }
+            });
+
+            // When the first point is reached, stop the movement
+            if (_currentPointIndex <= 0) {
+              _isMoving = false;
+              timer.cancel();
+              _onPathComplete();
+            }
+          } else {
+            _movementTimer?.cancel();
+            _isMoving = false;
+            timer.cancel();
+            _onPathComplete();
+          }
+        }
+      }
+    });
+  }
+
+  void _startManualMovement_UAV(List<List<LatLng>> selectedSegments, {required bool forward}) {
+    if (selectedSegments.isEmpty || _selectedStartingPoint == null) {
+      print("Selected segments are empty or starting point not selected, cannot start movement");
+      return;
+    }
+
+    if (_movementTimer != null && _movementTimer!.isActive) {
+      _isMoving = true;
+      return;
+    }
+
+    // Determine the starting point in the first segment
+    int startingPointIndex = _findClosestPointIndex(selectedSegments[0], _selectedStartingPoint!);
+
+    // Set the initial marker position based on the starting point
+    if (!_isMoving) {
+      setState(() {
+        _carPosition = selectedSegments[0][startingPointIndex];
+        _currentSegmentIndex = 0;
+        _currentPointIndex = startingPointIndex;
+      });
+    }
+
+    // Decide the direction-specific marker function
+    Add_Car_Marker_UAV(_isSegmentSelected(
+        selectedSegments[0],
+        [selectedSegments[0]],
+        _currentPointIndex,
+        _isHorizontalDirection ? PathDirection.horizontal : PathDirection.vertical));
+
+    double updateInterval = 0.1; // seconds
+    double speed = 10.0; // meters per second
+
+    _movementTimer = Timer.periodic(
+        Duration(milliseconds: (updateInterval * 1000).toInt()), (timer) async {
+      if (_isMoving) {
+        // Forward movement logic
+        if (forward) {
+          // Traverse the selected segments forward
+          if (_currentSegmentIndex < selectedSegments.length) {
+            if (_currentPointIndex < selectedSegments[_currentSegmentIndex].length - 1) {
+              LatLng start = selectedSegments[_currentSegmentIndex][_currentPointIndex];
+              LatLng end = selectedSegments[_currentSegmentIndex][_currentPointIndex + 1];
+              double segmentDistanceKM = calculateonelinedistance(start, end);
+              double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
+              segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+              double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+              _carPosition = _lerpLatLng(start, end, segmentProgress);
+              bool isSelectedSegment = _isSegmentSelected(
+                selectedSegments[_currentSegmentIndex],
+                [selectedSegments[_currentSegmentIndex]],
+                _currentPointIndex,
+                _isHorizontalDirection ? PathDirection.horizontal : PathDirection.vertical,
+              );
+              distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+              if (isSelectedSegment) {
+                totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
+                double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+                setState(() {
+                  _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
+                  _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+                });
+                if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
+                  FirebaseDatabase.instance
+                      .ref()
+                      .child('remainingDistance')
+                      .set(_remainingDistanceKM_SelectedPath);
+                }
+              }
+              setState(() {
+                _remainingDistanceKM_TotalPath =
+                    (totalZigzagPathKm - distanceCoveredInWholeJourney)
+                        .clamp(0.0, totalZigzagPathKm);
+              });
+
+              // Update car marker position
+              setState(() {
+                _markers.removeWhere((marker) => marker.markerId == const MarkerId('uav'));
+                Add_Car_Marker_UAV(isSelectedSegment);
+                if (segmentProgress >= 1.0) {
+                  _currentPointIndex++;
+                  segmentDistanceCoveredKM = 0.0;
+                }
+              });
+              if (_currentPointIndex >= selectedSegments[_currentSegmentIndex].length - 1) {
+                if (_currentSegmentIndex == selectedSegments.length - 1) {
+                  _movementTimer?.cancel();
+                  _isMoving = false;
+                  timer.cancel();
+                  _onPathComplete();
+                } else {
+                  _currentSegmentIndex++;
+                  _currentPointIndex = 0;
+                }
+              }
+            } else {
+              if (_currentSegmentIndex == selectedSegments.length - 1) {
+                _movementTimer?.cancel();
+                _isMoving = false;
+                timer.cancel();
+                _onPathComplete();
+              } else {
+                _currentSegmentIndex++;
+                _currentPointIndex = 0;
+              }
+            }
+          } else {
+            _movementTimer?.cancel();
+            _isMoving = false;
+            timer.cancel();
+            _onPathComplete();
+          }
+        }else {
+          if (_currentSegmentIndex > 0) {
+            if (_currentPointIndex > 0) {
+              LatLng start = selectedSegments[_currentSegmentIndex][_currentPointIndex];
+              LatLng end = selectedSegments[_currentSegmentIndex][_currentPointIndex - 1];
+              double segmentDistanceKM = calculateonelinedistance(start, end);
+              double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
+              segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+
+              double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+              _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+              bool isSelectedSegment = _isSegmentSelected(
+                  selectedSegments[_currentSegmentIndex],
+                  [selectedSegments[_currentSegmentIndex]],
+                  _currentPointIndex - 1,
+                  _isHorizontalDirection ? PathDirection.horizontal : PathDirection.vertical);
+
+              setState(() {
+                _markers.removeWhere((marker) => marker.markerId == const MarkerId('uav'));
+                Add_Car_Marker_UAV(isSelectedSegment);
+
+                if (segmentProgress >= 1.0) {
+                  _currentPointIndex--;
+                  segmentDistanceCoveredKM = 0.0;
+                }
+              });
+
+              // When the first point is reached, stop the movement
+              if (_currentPointIndex <= 0) {
+                _currentSegmentIndex--;
+                _currentPointIndex = selectedSegments[_currentSegmentIndex].length - 1;
+              }
+            } else {
+              _currentSegmentIndex--;
+              _currentPointIndex = selectedSegments[_currentSegmentIndex].length - 1;
+            }
+          } else {
+            _movementTimer?.cancel();
+            _isMoving = false;
+            timer.cancel();
+            _onPathComplete();
+          }
+        }
+      }
+    });
+  }
+  void _startMovement_UAV(List<List<LatLng>> selectedSegmentsQueue) {
+    if (selectedSegmentsQueue.isEmpty || _selectedStartingPoint == null) {
+      print(
+          "Selected segments are empty or starting point not selected, cannot start movement");
+      return;
+    }
+
+    _isMoving = true;
+    int currentSegmentIndex = 0;
+    double totalDistanceCoveredKM_SelectedPath = 0.0;
+    double segmentDistanceCoveredKM = 0.0;
+    double distanceCoveredInWholeJourney = 0.0;
+
+    void _moveToNextSegment() {
+      if (currentSegmentIndex >= selectedSegmentsQueue.length) {
+        _isMoving = false;
+        _onPathComplete();
+        return;
+      }
+
+      List<LatLng> currentSegment = selectedSegmentsQueue[currentSegmentIndex];
+      int startingPointIndex = _findClosestPointIndex(currentSegment, _selectedStartingPoint!);
+
+      setState(() {
+        _carPosition = currentSegment[startingPointIndex];
+        _currentPointIndex = startingPointIndex;
+      });
+
+      bool movingForward = startingPointIndex < currentSegment.length / 2;
+
+      _movementTimer = Timer.periodic(
+          Duration(milliseconds: (updateInterval * 1000).toInt()),
+              (timer) async {
+            if (_isMoving) {
+              if (movingForward) {
+                if (_currentPointIndex < currentSegment.length - 1) {
+                  LatLng start = currentSegment[_currentPointIndex];
+                  LatLng end = currentSegment[_currentPointIndex + 1];
+                  double segmentDistanceKM = calculateonelinedistance(start, end);
+                  double distanceCoveredInThisTickKM =
+                      (speed * updateInterval) / 1000.0;
+                  segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+                  double segmentProgress =
+                  (segmentDistanceCoveredKM / segmentDistanceKM)
+                      .clamp(0.0, 1.0);
+                  _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+                  distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+                  totalDistanceCoveredKM_SelectedPath +=
+                      distanceCoveredInThisTickKM;
+                  double remainingDistanceKM_SelectedPath =
+                      _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+
+                  setState(() {
+                    _remainingDistanceKM_SelectedPath =
+                        remainingDistanceKM_SelectedPath.clamp(
+                            0.0, _totalDistanceKM);
+                    _remainingDistanceKM_TotalPath =
+                        (totalZigzagPathKm - distanceCoveredInWholeJourney)
+                            .clamp(0.0, totalZigzagPathKm);
+                    _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+                    _markers.removeWhere(
+                            (marker) => marker.markerId == const MarkerId('uav'));
+                    Add_Car_Marker_UAV(true);
+
+                    if (segmentProgress >= 1.0) {
+                      _currentPointIndex++;
+                      segmentDistanceCoveredKM = 0.0;
+                    }
+                  });
+
+                  if (_currentPointIndex >= currentSegment.length - 1) {
+                    timer.cancel();
+                    currentSegmentIndex++;
+                    _moveToNextSegment();
+                  }
+                } else {
+                  _isMoving = false;
+                  timer.cancel();
+                  _onPathComplete();
+                }
+              } else {
+                if (_currentPointIndex > 0) {
+                  LatLng start = currentSegment[_currentPointIndex];
+                  LatLng end = currentSegment[_currentPointIndex - 1];
+                  double segmentDistanceKM = calculateonelinedistance(start, end);
+                  double distanceCoveredInThisTickKM =
+                      (speed * updateInterval) / 1000.0;
+                  segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+                  double segmentProgress =
+                  (segmentDistanceCoveredKM / segmentDistanceKM)
+                      .clamp(0.0, 1.0);
+                  _carPosition = _lerpLatLng(start, end, segmentProgress);
+
+                  distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+                  totalDistanceCoveredKM_SelectedPath +=
+                      distanceCoveredInThisTickKM;
+                  double remainingDistanceKM_SelectedPath =
+                      _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+
+                  setState(() {
+                    _remainingDistanceKM_SelectedPath =
+                        remainingDistanceKM_SelectedPath.clamp(
+                            0.0, _totalDistanceKM);
+                    _remainingDistanceKM_TotalPath =
+                        (totalZigzagPathKm - distanceCoveredInWholeJourney)
+                            .clamp(0.0, totalZigzagPathKm);
+                    _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+                    _markers.removeWhere(
+                            (marker) => marker.markerId == const MarkerId('uav'));
+                    Add_Car_Marker_UAV(true);
+
+                    if (segmentProgress >= 1.0) {
+                      _currentPointIndex--;
+                      segmentDistanceCoveredKM = 0.0;
+                    }
+                  });
+
+                  if (_currentPointIndex <= 0) {
+                    timer.cancel();
+                    currentSegmentIndex++;
+                    _moveToNextSegment();
+                  }
+                } else {
+                  _isMoving = false;
+                  timer.cancel();
+                  _onPathComplete();
+                }
+              }
+            }
+          });
+    }
+
+    _moveToNextSegment();
+  }
+
+
+
+
+  void _startMovement_GPS(List<LatLng> path, List<List<LatLng>> selectedSegments) {
+    if (path.isEmpty || _selectedStartingPoint == null) {
+      print("Path is empty or starting point not selected, cannot start movement");
+      return;
+    }
+
+    _isMoving = true;
+
+    // Initial setup based on selected starting point
+    int startingPointIndex = _findClosestPointIndex(path, _selectedStartingPoint!);
+    setState(() {
+      _carPosition = _selectedStartingPoint!; // Start from the selected point
+      _currentPointIndex = startingPointIndex;
+    });
+
+    // Add initial car marker at the starting point
+    Add_Car_Marker(_isSegmentSelected(path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
+
+    double segmentDistanceCoveredKM = 0.0;
+    double totalDistanceCoveredKM_SelectedPath = 0.0;
+    double distanceCoveredInWholeJourney = 0.0;
+    LatLng? _previousPosition;  // Store previous GPS position
+
+    // Watch for GPS location changes
+    _gpsStreamSubscription = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: geo.LocationAccuracy.high, // High accuracy for small areas
+      ),
+    ).listen((Position position) {
+      if (!_isMoving) return;
+
+      LatLng currentPosition = LatLng(position.latitude, position.longitude);
+
+      // Apply low-pass filter to smooth out the GPS location
+      if (_previousPosition != null) {
+        currentPosition = _smoothLocation(currentPosition, _previousPosition!, 0.2); // Alpha for smoothing
+      }
+      _previousPosition = currentPosition;
+
+      // Update the car marker position
+      setState(() {
+        _carPosition = currentPosition;
+      });
+
+      // Calculate the distance covered using GPS data
+      if (_currentPointIndex < path.length - 1) {
+        LatLng nextPoint = path[_currentPointIndex + 1];
+        double segmentDistanceKM = calculateonelinedistance(currentPosition, nextPoint);
+        segmentDistanceCoveredKM += calculateonelinedistance(_carPosition, nextPoint);
+
+        if (segmentDistanceCoveredKM >= segmentDistanceKM) {
+          _currentPointIndex++;
+          segmentDistanceCoveredKM = 0.0;
+        }
+
+        // Distance and time calculations
+        distanceCoveredInWholeJourney += calculateonelinedistance(_carPosition, nextPoint);
+        totalDistanceCoveredKM_SelectedPath += segmentDistanceCoveredKM;
+
+        double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+
+        setState(() {
+          _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
+          _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
+          _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+
+          // Remove and update car marker
+          _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
+          Add_Car_Marker(true); // Re-add marker at the updated position
+        });
+
+        // Check if car marker reaches the end of path
+        if (_currentPointIndex >= path.length - 1) {
+          _isMoving = false;
+          _onPathComplete();
+        }
+      }
+
+      // Check if car is out of track or polygon field
+      if (!_isPointOnPath(currentPosition, path)) {
+        _showSnackbar(context, "OUT OF TRACK");
+      }
+      if (!_isPointInsidePolygon(currentPosition, polygons.first.points)) {
+        _showSnackbar(context, "OUTSIDE FIELD AREA");
+      }
+    });
+  }
+// Helper function for smoothing GPS updates
+  LatLng _smoothLocation(LatLng currentPosition, LatLng previousPosition, double alpha) {
+    return LatLng(
+      alpha * currentPosition.latitude + (1 - alpha) * previousPosition.latitude,
+      alpha * currentPosition.longitude + (1 - alpha) * previousPosition.longitude,
+    );
+  }
+// Utility functions for warning
+  bool _isPointOnPath(LatLng point, List<LatLng> path) {
+    for (int i = 0; i < path.length - 1; i++) {
+      if (calculateonelinedistance(point, path[i]) < trackTolerance) {
+        return true;
+      }
+    }
+    return false;
+  }
+  bool _isPointInsidePolygon(LatLng point, List<LatLng> polygonPoints) {
+    int i, j = polygonPoints.length - 1;
+    bool inside = false;
+
+    for (i = 0; i < polygonPoints.length; i++) {
+      if ((polygonPoints[i].longitude < point.longitude &&
+                  polygonPoints[j].longitude >= point.longitude ||
+              polygonPoints[j].longitude < point.longitude &&
+                  polygonPoints[i].longitude >= point.longitude) &&
+          (polygonPoints[i].latitude <= point.latitude ||
+              polygonPoints[j].latitude <= point.latitude)) {
+        if (polygonPoints[i].latitude +
+                (point.longitude - polygonPoints[i].longitude) /
+                    (polygonPoints[j].longitude - polygonPoints[i].longitude) *
+                    (polygonPoints[j].latitude - polygonPoints[i].latitude) <
+            point.latitude) {
+          inside = !inside;
+        }
+      }
+      j = i;
+    }
+
+    return inside;
+  }
+
+
+
+
+
+
 
 //UI BUILD
   @override
@@ -3363,7 +3197,6 @@ class _Fetch_InputState extends State<Fetch_Input>
                               ),
                               onPressed: () async {
                                 context.read<ISSAASProvider>().setIsSaas(false);
-
                                 try {
                                   await FirebaseAuth.instance.signOut();
                                   Navigator.pushReplacement(
@@ -3413,82 +3246,130 @@ class _Fetch_InputState extends State<Fetch_Input>
                       );
                     }),
                   ),
-                  widget.isManualControl
-                      ? Padding(
-                          padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
-                          child: Container(
-                            padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
-                            width: 120,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: Colors.indigo[800],
-                              borderRadius:
-                                  const BorderRadius.all(Radius.circular(5)),
-                            ),
+                  if (!context.read<ISSAASProvider>().isSaas)
+                    widget.isManualControl
+                        ? Padding(
+                            padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
                             child: Container(
+                              padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
+                              width: 120,
+                              height: 40,
                               decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(10),
+                                color: Colors.indigo[800],
+                                borderRadius:
+                                    const BorderRadius.all(Radius.circular(5)),
                               ),
-                              child: Row(
-                                children: [
-                                  const SizedBox(width: 7),
-                                  Center(
-                                    child: Text(
-                                      "Manual Mode",
-                                      style: TextStyle(
-                                        color: Colors.indigo[800],
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 14,
-                                        fontFamily:
-                                            GoogleFonts.poppins().fontFamily,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const SizedBox(width: 7),
+                                    Center(
+                                      child: Text(
+                                        "Manual Mode",
+                                        style: TextStyle(
+                                          color: Colors.indigo[800],
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 14,
+                                          fontFamily:
+                                              GoogleFonts.poppins().fontFamily,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                          )
+                        : Padding(
+                            padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
+                            child: Container(
+                              padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
+                              width: 140,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: Colors.indigo[800],
+                                borderRadius:
+                                    const BorderRadius.all(Radius.circular(5)),
+                              ),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const SizedBox(width: 7),
+                                    Center(
+                                      child: Text(
+                                        "Autonomous Mode",
+                                        style: TextStyle(
+                                          color: Colors.indigo[800],
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                          fontFamily:
+                                              GoogleFonts.poppins().fontFamily,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
-                        )
-                      : Padding(
-                          padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
-                          child: Container(
-                            padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
-                            width: 140,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: Colors.indigo[800],
-                              borderRadius:
-                                  const BorderRadius.all(Radius.circular(5)),
-                            ),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(10),
+
+                  if (context.read<ISSAASProvider>().isSaas)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
+                      child: Container(
+                        padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
+                        width: 145,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: Colors.indigo[800],
+                          borderRadius:
+                              const BorderRadius.all(Radius.circular(5)),
+                        ),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors
+                                .white, // Set the background color to white
+                            borderRadius:
+                                BorderRadius.circular(10), // Rounded corners
+                          ),
+                          child: Row(
+                            children: [
+                              Image.asset(
+                                'images/mobile.png', // Path to your mobile image
+                                height: 30,
+                                width: 30,
                               ),
-                              child: Row(
-                                children: [
-                                  const SizedBox(width: 7),
-                                  Center(
-                                    child: Text(
-                                      "Autonomous Mode",
-                                      style: TextStyle(
-                                        color: Colors.indigo[800],
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 12,
-                                        fontFamily:
-                                            GoogleFonts.poppins().fontFamily,
-                                      ),
-                                    ),
+                              const SizedBox(width: 8),
+                              Center(
+                                child: Text(
+                                  "SaaS Version",
+                                  style: TextStyle(
+                                    color: Colors.indigo[
+                                        800], // Text color set to indigo
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                    fontFamily:
+                                        GoogleFonts.poppins().fontFamily,
                                   ),
-                                ],
+                                ),
                               ),
-                            ),
+                            ],
                           ),
                         ),
+                      ),
+                    ),
                 ],
               ),
               // Add Marquee if in Manual Mode
+
               if (_isCustomMode) // Replace with your actual condition
                 Container(
                   height: 40,
@@ -3507,14 +3388,20 @@ class _Fetch_InputState extends State<Fetch_Input>
                           offset: Offset(-_offset, 0),
                           child: Row(
                             children: [
-                              Text(
-                                'Manual Coordinate Method: DO NOT PLACE MARKER OUTSIDE THE SHADED AREA',
-                                style: TextStyle(
-                                  fontFamily: GoogleFonts.poppins().fontFamily,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
+                              Consumer<ISSAASProvider>(
+                                builder: (context, issaasProvider, child) {
+                                  return Text(
+                                    issaasProvider.isSaas
+                                        ? 'Manual Sprayer Mode: Try to Stay Inside Your field'
+                                        : 'Manual Coordinate Method: DO NOT PLACE MARKER OUTSIDE THE SHADED AREA',
+                                    style: TextStyle(
+                                      fontFamily: GoogleFonts.poppins().fontFamily,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                    ),
+                                  );
+                                },
                               ),
                               SizedBox(
                                   width: 50), // Adding space between repeats
@@ -3532,7 +3419,9 @@ class _Fetch_InputState extends State<Fetch_Input>
       body: SingleChildScrollView(
         child: Column(
           children: [
-            Container(
+
+            if (!Provider.of<ISSAASProvider>(context).isSaas)
+              Container(
               padding: EdgeInsets.all(15),
               color: Colors.white,
               child: Center(
@@ -3867,10 +3756,7 @@ class _Fetch_InputState extends State<Fetch_Input>
                                       ),
                                       child: LinearPercentIndicator(
                                         lineHeight: 10,
-                                        percent: (_remainingDistanceKM_TotalPath !=
-                                                    null &&
-                                                totalZigzagPathKm != null &&
-                                                totalZigzagPathKm != 0)
+                                        percent: (totalZigzagPathKm != 0)
                                             ? _remainingDistanceKM_TotalPath /
                                                 totalZigzagPathKm
                                             : 0.0, // default to 0 if values are invalid
@@ -3957,7 +3843,7 @@ class _Fetch_InputState extends State<Fetch_Input>
                                   _isbackwardPressed = false;
                                   _isMoving = false;
                                 });
-                                _stopMovement(); // Stop movement when button released
+                                stopMovement(); // Stop movement when button released
                               },
                               child: Image.asset(
                                 _isbackwardPressed
@@ -3971,7 +3857,7 @@ class _Fetch_InputState extends State<Fetch_Input>
                             GestureDetector(
                               onTap: () {
                                 setState(() {
-                                  _stopMovement(); // Stop movement function called
+                                  stopMovement(); // Stop movement function called
                                 });
                               },
                               child: Image.asset(
@@ -4004,7 +3890,7 @@ class _Fetch_InputState extends State<Fetch_Input>
                                   _isforwardPressed = false;
                                   _isMoving = false;
                                 });
-                                _stopMovement(); // Stop movement when button released
+                                stopMovement(); // Stop movement when button released
                               },
                               child: Image.asset(
                                 _isforwardPressed
@@ -4193,58 +4079,55 @@ class _Fetch_InputState extends State<Fetch_Input>
                       controller: _screenshotController,
                       child: _currentLocation == null
                           ? const Center(child: CircularProgressIndicator())
-                          : RepaintBoundary(
-                              key: _googleMapKey, // Attach the key to GoogleMap
-                              child: GoogleMap(
-                                initialCameraPosition: _currentLocation != null
-                                    ? CameraPosition(
-                                        target: LatLng(
-                                          _currentLocation!.latitude!,
-                                          _currentLocation!.longitude!,
-                                        ),
-                                        zoom: 15.0,
-                                      )
-                                    : const CameraPosition(
-                                        target: LatLng(
-                                            0, 0), // Default fallback position
-                                        zoom: 3.0, // Low zoom for global view
-                                      ),
-                                markers: {
-                                  ..._markers,
-                                  if (_currentPosition != null)
-                                    Marker(
-                                      markerId:
-                                          const MarkerId('currentLocation'),
-                                      position: _currentPosition,
-                                      icon:
-                                          BitmapDescriptor.defaultMarkerWithHue(
-                                              BitmapDescriptor.hueViolet),
-                                    ),
-                                },
-                                polylines: _polylines,
-                                polygons: {
-                                  ..._FieldPolygons, // Field detection polygons
-                                  ...polygons, // Custom polygons you will draw
-                                },
-                                zoomGesturesEnabled: true,
-                                rotateGesturesEnabled: true,
-                                scrollGesturesEnabled: true,
-                                buildingsEnabled: true,
-                                onTap: _isCustomMode ? _onMapTap : null,
-                                myLocationEnabled: true,
-                                myLocationButtonEnabled: false,
-                                onMapCreated: (controller) {
-                                  _googleMapController = controller;
-                                  // Camera animation is now handled separately.
-                                  _checkCityAndFetchData(); // Fetch and display Field data on map creation
-                                },
-                                gestureRecognizers: <Factory<
-                                    OneSequenceGestureRecognizer>>{
-                                  Factory<OneSequenceGestureRecognizer>(
-                                      () => EagerGestureRecognizer()),
-                                },
-                              ),
+                          :RepaintBoundary(
+                        key: _googleMapKey, // Attach the key to GoogleMap
+                        child: GoogleMap(
+                          initialCameraPosition: _currentLocation != null
+                              ? CameraPosition(
+                            target: LatLng(
+                              _currentLocation!.latitude!,
+                              _currentLocation!.longitude!,
                             ),
+                            zoom: 15.0,
+                          )
+                              : const CameraPosition(
+                            target: LatLng(0, 0), // Default fallback position
+                            zoom: 3.0, // Low zoom for global view
+                          ),
+                          markers: {
+                            ..._markers,
+                            if (_currentPosition != null)
+                              Marker(
+                                markerId: const MarkerId('currentLocation'),
+                                position: _currentPosition,
+                                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
+                              ),
+                          },
+                          polylines: _polylines,
+                          polygons: {
+                            if (!Provider.of<ISSAASProvider>(context).isSaas)
+                              ..._FieldPolygons, // Load field detection polygons only if not in SaaS mode
+                            ...polygons, // Always load custom polygons
+                          },
+                          zoomGesturesEnabled: true,
+                          rotateGesturesEnabled: true,
+                          scrollGesturesEnabled: true,
+                          buildingsEnabled: true,
+                          onTap: _isCustomMode ? _onMapTap : null,
+                          myLocationEnabled: true,
+                          myLocationButtonEnabled: false,
+                          onMapCreated: (controller) {
+                            _googleMapController = controller;
+                            // Camera animation is now handled separately.
+                            _checkCityAndFetchData(); // Fetch and display Field data on map creation
+                          },
+                          gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                            Factory<OneSequenceGestureRecognizer>(
+                                    () => EagerGestureRecognizer()),
+                          },
+                        ),
+                      ),
+
                     ),
                     Padding(
                       padding: const EdgeInsets.all(8.0),
@@ -4388,7 +4271,6 @@ class _Fetch_InputState extends State<Fetch_Input>
       ),
     );
   }
-
   Future<void> captureBottomHalfGoogleMap() async {
     try {
       // Capture the widget as an image
@@ -4417,7 +4299,6 @@ class _Fetch_InputState extends State<Fetch_Input>
       print('Error capturing GoogleMap screenshot: $e');
     }
   }
-
   Uint8List cropBottomHalf(Uint8List originalBytes, int width, int height) {
     // Decode the original image from the Uint8List
     final img.Image? originalImage = img.decodeImage(originalBytes);
@@ -4438,7 +4319,6 @@ class _Fetch_InputState extends State<Fetch_Input>
 
     return originalBytes; // Return original bytes if decoding fails
   }
-
   void animateToFirstMarker() {
     if (_isCustomMode == false && _markerPositions.isNotEmpty) {
       _googleMapController.animateCamera(
@@ -4451,7 +4331,6 @@ class _Fetch_InputState extends State<Fetch_Input>
       );
     }
   }
-
   void _updateRouteData() {
     try {
       for (int i = 0; i < _markers.length; i++) {
@@ -4481,44 +4360,71 @@ class _Fetch_InputState extends State<Fetch_Input>
       print('Error updating route data: $e');
     }
   }
-
   void _onMapTap(LatLng latLng) async {
-    // Check if the tapped location intersects with any Field polygon
-    bool isNotOnField = !_isPointInAnyPolygon(latLng);
+    if (context.read<ISSAASProvider>().isSaas) {
 
-    if (isNotOnField) {
-      // Show snackbar indicating that the marker can't be placed on Fields or residential areas
-      _showSnackbar(context, 'Cannot place marker. Please Tap On shaded areas');
-      return; // Exit the function to avoid placing the marker
-    }
+        // Place subsequent markers - NO FIELD CHECK
+        final markerId = MarkerId('M${_markers.length + 1}');
+        final newMarker = Marker(
+          markerId: markerId,
+          position: latLng,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+              _selectedMarkerId == markerId
+                  ? BitmapDescriptor.hueGreen
+                  : BitmapDescriptor.hueAzure),
+          onTap: () {
+            if (_markers.length > 2 && latLng == _markers.first.position) {
+              Selecting_Path_Direction_and_Turn();
+            }
+          },
+        );
 
-    // Continue with marker placement if no Field is detected
-    final markerId = MarkerId('M${_markers.length + 1}');
-    final newMarker = Marker(
-      markerId: markerId,
-      position: latLng,
-      icon: BitmapDescriptor.defaultMarkerWithHue(_selectedMarkerId == markerId
-          ? BitmapDescriptor.hueGreen
-          : BitmapDescriptor.hueAzure),
-      onTap: () {
-        if (_markers.length > 2 && latLng == _markers.first.position) {
-          Selecting_Path_Direction_and_Turn();
-        }
-      },
-    );
+        setState(() {
+          _markers.add(newMarker);
+          _markerPositions.add(latLng);
 
-    setState(() {
-      _markers.add(newMarker);
-      _markerPositions.add(latLng);
+          if (_markers.length > 1) {
+            _updatePolylines();
+            _updateRouteData();
+          }
+        });
+      } else {
+      // If ISSAAS is false:
+      // FIELD CHECK IS ENABLED for ALL markers
+      bool isNotOnField = !_isPointInAnyPolygon(latLng);
 
-      // Update polylines and route data if more than one marker is present
-      if (_markers.length > 1) {
-        _updatePolylines();
-        _updateRouteData();
+      if (isNotOnField) {
+        _showSnackbar(
+            context, 'Cannot place marker. Please Tap On shaded areas');
+        return;
       }
-    });
-  }
 
+      final markerId = MarkerId('M${_markers.length + 1}');
+      final newMarker = Marker(
+        markerId: markerId,
+        position: latLng,
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+            _selectedMarkerId == markerId
+                ? BitmapDescriptor.hueGreen
+                : BitmapDescriptor.hueAzure),
+        onTap: () {
+          if (_markers.length > 2 && latLng == _markers.first.position) {
+            Selecting_Path_Direction_and_Turn();
+          }
+        },
+      );
+
+      setState(() {
+        _markers.add(newMarker);
+        _markerPositions.add(latLng);
+
+        if (_markers.length > 1) {
+          _updatePolylines();
+          _updateRouteData();
+        }
+      });
+    }
+  }
   bool _isPointInAnyPolygon(LatLng point) {
     for (Polygon polygon in _FieldPolygons) {
       if (_isPointInPolygon(point, polygon)) {
@@ -4527,7 +4433,6 @@ class _Fetch_InputState extends State<Fetch_Input>
     }
     return false;
   }
-
   bool _isPointInPolygon(LatLng point, Polygon polygon) {
     int intersections = 0;
     for (int i = 0; i < polygon.points.length - 1; i++) {
@@ -4541,7 +4446,6 @@ class _Fetch_InputState extends State<Fetch_Input>
     // If the number of intersections is odd, the point is inside the polygon
     return (intersections % 2 == 1);
   }
-
   bool _rayCrossesSegment(LatLng point, LatLng p1, LatLng p2) {
     // Ensure p1 has a smaller y-coordinate than p2
     if (p1.latitude > p2.latitude) {
@@ -4575,9 +4479,8 @@ class _Fetch_InputState extends State<Fetch_Input>
 
     return point.longitude < intersectionLongitude;
   }
-
   Future<void> _checkCityAndFetchData() async {
-    String cityName = 'rawalpindi';
+    String cityName = weatherController.weather.value.cityname;
 
     if (cityName.isEmpty) {
       print("City name is still loading...");
@@ -4610,7 +4513,6 @@ class _Fetch_InputState extends State<Fetch_Input>
         break;
     }
   }
-
   Future<void> _fetchFieldData(String url) async {
     final response = await http.get(Uri.parse(url));
 
@@ -4625,7 +4527,6 @@ class _Fetch_InputState extends State<Fetch_Input>
       throw Exception('Failed to fetch Field data');
     }
   }
-
   void _processFieldData(Map<String, dynamic> data) {
     Map<int, LatLng> nodes = {}; // To store all nodes with their coordinates
     List<Polygon> polygons = [];
@@ -4665,9 +4566,8 @@ class _Fetch_InputState extends State<Fetch_Input>
       _FieldPolygons = polygons.toSet(); // Ensure you use Set<Polygon>
     });
   }
-
 //area calculation of field
-  double _calculateSphericalPolygonArea(List<LatLng> points) {
+double _calculateSphericalPolygonArea(List<LatLng> points) {
     const double radiusOfEarth = 6378137.0; // Earth's radius in meters
     double totalArea = 0.0;
 
@@ -4850,7 +4750,6 @@ class _Fetch_InputState extends State<Fetch_Input>
     return areaInAcres;
   }*/
 }
-
 void _showSnackbar(BuildContext context, String message) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
@@ -4875,7 +4774,6 @@ void _showSnackbar(BuildContext context, String message) {
     ),
   );
 }
-
 void _showSnackbar_connection(BuildContext context, String message) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
@@ -4900,32 +4798,6 @@ void _showSnackbar_connection(BuildContext context, String message) {
     ),
   );
 }
-
-void _showRestrictedAreaSnackbar(BuildContext context, String message) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(
-        message,
-        style: TextStyle(
-          fontFamily: GoogleFonts.poppins().fontFamily,
-          fontSize: 16,
-          color: Colors.white,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-      backgroundColor: Colors.red.withOpacity(0.8),
-      duration: const Duration(seconds: 12),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(
-          Radius.circular(10),
-        ),
-      ),
-      behavior: SnackBarBehavior.floating,
-      margin: EdgeInsets.all(8),
-    ),
-  );
-}
-
 class _CardItem extends StatelessWidget {
   final String title;
   final String value;

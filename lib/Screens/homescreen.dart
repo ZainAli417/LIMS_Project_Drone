@@ -4,6 +4,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:project_drone/Screens/Fetch_Input.dart';
 import 'package:project_drone/Screens/LoginScreen.dart';
+import 'package:project_drone/shared_state.dart';
 import 'package:provider/provider.dart';
 import 'package:toggle_switch/toggle_switch.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
@@ -19,7 +20,7 @@ import 'package:get/get.dart';
 
 class MyHomePage extends StatefulWidget {
   final String deviceId;
-  const MyHomePage({super.key,required this.deviceId});
+  const MyHomePage({super.key, required this.deviceId});
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
@@ -65,11 +66,11 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
     )..addListener(() {});*/
   }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Preload the images before rendering
-   
   }
 
   Map<String, dynamic>? _farmerData;
@@ -141,7 +142,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    bool isSaas = context.watch<ISSAASProvider>().isSaas;
     return MaterialApp(
       home: Scaffold(
         backgroundColor: Colors.white,
@@ -236,7 +236,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                   fontFamily: GoogleFonts.poppins().fontFamily,
                                 ),
                               ),
-                              SizedBox(
+                              const SizedBox(
                                   width:
                                       2), // Reduced spacing between icon and text
 
@@ -321,21 +321,20 @@ class _MyHomePageState extends State<MyHomePage> {
                                   borderRadius: BorderRadius.circular(
                                       10), // Rounded corners
                                 ),
-
                                 child: Row(
                                   children: [
-                                    const CustomUGVIcon(), // Custom UGV connected icon
-                                    const SizedBox(width: 7),
+                                    widget.deviceId.contains('UAV')
+                                        ? const CustomUAVIcon() // Load CustomUAVIcon if device ID contains 'uav' (case-insensitive)
+                                        : const CustomUGVIcon(), // Load CustomUGVIcon otherwise
+                                    const SizedBox(width: 1),
                                     Center(
                                       child: Text(
                                         "${widget.deviceId} Connected ",
                                         style: TextStyle(
-                                          color: Colors.indigo[
-                                              800], // Text color set to indigo
+                                          color: Colors.indigo[800], // Text color set to indigo
                                           fontWeight: FontWeight.w800,
                                           fontSize: 12,
-                                          fontFamily:
-                                              GoogleFonts.poppins().fontFamily,
+                                          fontFamily: GoogleFonts.poppins().fontFamily,
                                         ),
                                       ),
                                     ),
@@ -343,48 +342,54 @@ class _MyHomePageState extends State<MyHomePage> {
                                   ],
                                 ),
 
+
                               ),
                             ),
                           )
                         : Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
-                      child: Container(
-                        padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
-                        width: 145,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.indigo[800],
-                          borderRadius: const BorderRadius.all(Radius.circular(5)),
-                        ),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white, // Set the background color to white
-                            borderRadius: BorderRadius.circular(10), // Rounded corners
-                          ),
-                          child: Row(
-                            children: [
-                              Image.asset(
-                                'images/mobile.png', // Path to your mobile image
-                                height: 30,
-                                width: 30,
+                            padding: const EdgeInsets.fromLTRB(10, 5, 15, 5),
+                            child: Container(
+                              padding: const EdgeInsets.fromLTRB(5, 1, 0, 0),
+                              width: 145,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: Colors.indigo[800],
+                                borderRadius:
+                                    const BorderRadius.all(Radius.circular(5)),
                               ),
-                              const SizedBox(width: 8),
-                              Center(
-                                child: Text(
-                                  "SaaS Version",
-                                  style: TextStyle(
-                                    color: Colors.indigo[800], // Text color set to indigo
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                    fontFamily: GoogleFonts.poppins().fontFamily,
-                                  ),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors
+                                      .white, // Set the background color to white
+                                  borderRadius: BorderRadius.circular(
+                                      10), // Rounded corners
+                                ),
+                                child: Row(
+                                  children: [
+                                    Image.asset(
+                                      'images/mobile.png', // Path to your mobile image
+                                      height: 30,
+                                      width: 30,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Center(
+                                      child: Text(
+                                        "SaaS Version",
+                                        style: TextStyle(
+                                          color: Colors.indigo[
+                                              800], // Text color set to indigo
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                          fontFamily:
+                                              GoogleFonts.poppins().fontFamily,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),// Return an empty widget if not purchased
+                            ),
+                          ), // Return an empty widget if not purchased
                   ],
                 ),
               ],
@@ -400,8 +405,8 @@ class _MyHomePageState extends State<MyHomePage> {
                 Container(
                   padding: const EdgeInsets.fromLTRB(12, 9, 12, 5),
                   width: 700,
-                 // height : 645,
-          height: isSaas ? 795 : 645,
+                  // height : 645,
+                  height: context.watch<ISSAASProvider>().isSaas ? 795 : 645,
                   decoration: const BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.all(Radius.circular(15)),
@@ -513,7 +518,7 @@ class _MyHomePageState extends State<MyHomePage> {
                           ],
                         ),
                       ),
-                      if (!isSaas)
+                      if (!context.watch<ISSAASProvider>().isSaas)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(5, 10, 5, 5),
                           child: Row(
@@ -539,7 +544,7 @@ class _MyHomePageState extends State<MyHomePage> {
                         ),
 
 // Second GridView for Control Mode Cards
-                      if (!isSaas)
+                      if (!context.watch<ISSAASProvider>().isSaas)
                         Row(
                           children: [
                             Expanded(
@@ -556,7 +561,8 @@ class _MyHomePageState extends State<MyHomePage> {
                                       MaterialPageRoute(
                                         builder: (context) => Fetch_Input(
                                             //controller: _controller,
-                                            isManualControl: isManual,groundMode: _groundMode),
+                                            isManualControl: isManual,
+                                            groundMode: _groundMode),
                                       ),
                                     );
                                   },
@@ -606,7 +612,8 @@ class _MyHomePageState extends State<MyHomePage> {
                                       MaterialPageRoute(
                                         builder: (context) => Fetch_Input(
                                             // controller: _controller,
-                                            isManualControl: isManual,groundMode: _groundMode),
+                                            isManualControl: isManual,
+                                            groundMode: _groundMode),
                                       ),
                                     );
                                   },
@@ -647,7 +654,7 @@ class _MyHomePageState extends State<MyHomePage> {
                             ),
                           ],
                         ),
-                      if (isSaas)
+                      if (context.watch<ISSAASProvider>().isSaas)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(5, 10, 5, 5),
                           child: Column(
@@ -690,9 +697,11 @@ class _MyHomePageState extends State<MyHomePage> {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (context) => Fetch_Input(
-                                          // controller: _controller,
-                                          isManualControl: isManual,groundMode: _groundMode),
+                                      builder: (context) => const Fetch_Input(
+                                        // controller: _controller,
+                                        isManualControl: false,
+                                        groundMode: false,
+                                      ),
                                     ),
                                   );
                                 },
@@ -828,7 +837,7 @@ class _MyHomePageState extends State<MyHomePage> {
                             ),
                             const SizedBox(width: 50),
                             ToggleSwitch(
-                              activeBgColor: [Colors.indigo],
+                              activeBgColor: const [Colors.indigo],
                               initialLabelIndex: _isSolarOn ? 0 : 1,
                               totalSwitches: 2,
                               labels: const ['Yes', 'No'],
@@ -968,13 +977,34 @@ class CustomUGVIcon extends StatelessWidget {
         border: Border.all(width: 2, color: Colors.white),
       ),
 
-        child: Image.asset(
-          width: 35,
-          height: 35,
-          'images/ugv_active.png', // Path to the PNG image
-          fit: BoxFit.cover, // Ensures the image covers the circle
-        ),
+      child: Image.asset(
+        width: 35,
+        height: 35,
+        'images/ugv_active.png', // Path to the PNG image
+        fit: BoxFit.cover, // Ensures the image covers the circle
+      ),
+    );
+  }
+}
+class CustomUAVIcon extends StatelessWidget {
+  const CustomUAVIcon({super.key});
 
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40, // Updated to 40x40 size
+      height: 40,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(width: 2, color: Colors.white),
+      ),
+
+      child: Image.asset(
+        width: 35,
+        height: 35,
+        'images/uav.png', // Path to the PNG image
+        fit: BoxFit.cover, // Ensures the image covers the circle
+      ),
     );
   }
 }
@@ -1014,8 +1044,8 @@ class _GreenBlinkingDotState extends State<GreenBlinkingDot>
           height: 10,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color:
-                _colorAnimation.value ?? Colors.green[800], // Handle nullable color
+            color: _colorAnimation.value ??
+                Colors.green[800], // Handle nullable color
           ),
         );
       },
@@ -1024,6 +1054,7 @@ class _GreenBlinkingDotState extends State<GreenBlinkingDot>
 
   @override
   void dispose() {
+
     _controller.dispose();
     super.dispose();
   }

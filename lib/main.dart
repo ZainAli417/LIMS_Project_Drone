@@ -18,6 +18,7 @@ import 'Screens/splashScreen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ISSAASProvider().init();
   await Firebase.initializeApp();
   FirebaseDatabase.instance.setPersistenceEnabled(true);
   FirebaseDatabase.instance.setPersistenceCacheSizeBytes(10000000);  // Check if user is logged in

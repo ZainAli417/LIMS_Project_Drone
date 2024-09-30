@@ -473,8 +473,7 @@ class _DeviceSelectionState extends State<DeviceSelection>
                                       const SizedBox(height: 20),
                                       ElevatedButton(
                                         onPressed: () {
-                                          context.read<ISSAASProvider>().setIsSaas(
-                                              true); // Set ISSAAS state to true
+                                          context.read<ISSAASProvider>().setIsSaas(true); // Set isSaas to true
                                           Navigator.push(
                                             context,
                                             MaterialPageRoute(

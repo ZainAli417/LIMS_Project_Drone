@@ -536,40 +536,46 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                           borderRadius: BorderRadius.circular(10),
                         ),
                       ),
-                      onPressed: () {
-                        // Assign current LatLng if in ISSAAS mode
+                      onPressed: () async {
+                        _closePolygon(_turnLength);
+
                         if (_isISSAASMode) {
                           _selectedStartingPoint = _GPSloc;
                         }
 
-                        // Check if starting point is selected
                         if (_selectedStartingPoint == null) {
                           setState(() {
-                            isStartingPointEmpty = true; // Show error message
+                            isStartingPointEmpty = true;
                           });
                         } else {
                           Navigator.of(context).pop();
 
-                          // Proceed with path generation
                           LatLng initialPosition = _selectedStartingPoint!;
                           extractLatLngPoints();
 
-                          // Set path direction and generate path accordingly
+                          // Generate path based on direction
                           if (_selectedDirection == PathDirection.vertical) {
                             _isHorizontalDirection = false;
-                            dronepath_Vertical(polygonPoints, pathWidth,
-                                _selectedStartingPoint!);
+                             dronepath_Vertical(polygonPoints, pathWidth, _selectedStartingPoint!);
                           } else {
                             _isHorizontalDirection = true;
-                            dronepath_Horizontal(polygonPoints, pathWidth,
-                                _selectedStartingPoint!);
+                             dronepath_Horizontal(polygonPoints, pathWidth, _selectedStartingPoint!);
                           }
 
-                          // Finalize setup
-                          _closePolygon(_turnLength);
-                          setup_hardware();
+                          // Add a slight delay to ensure the map finishes rendering the path
+                          await Future.delayed(Duration(milliseconds: 800)); // Adjust delay as needed
+
+                          // Take the screenshot after path generation and delay
+                          _screenshotController.capture().then((Uint8List? capturedBytes) {
+                            if (capturedBytes != null) {
+                              setup_hardware(capturedBytes); // Call the setup method with the screenshot
+                            }
+                          }).catchError((e) {
+                            print('Error capturing screenshot: $e');
+                          });
                         }
                       },
+
                       child: Center(
                         child: Text(
                           'Generate Path',
@@ -677,7 +683,6 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       ));
     });
   }
-
   Future<void> Add_Car_Marker_UAV(bool isSelectedSegment) async {
     setState(() {
       _markers.add(Marker(
@@ -798,7 +803,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       },
     );
   }
-  void setup_hardware() {
+  void setup_hardware(Uint8List screenshotBytes) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -978,8 +983,6 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                 Consumer<ISSAASProvider>(
 
                   builder: (context, issaasProvider, child) {
-                    bool _isISSAASMode = issaasProvider.isSaas;
-                    LatLng _GPSloc = issaasProvider.GPSPostions;
                   return RichText(
                       text: TextSpan(
                         children: [
@@ -992,11 +995,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                             ),
                           ),
                           TextSpan(
-                            text: _isISSAASMode
-                                ? _GPSloc != null
-                                ? 'Lat: ${_GPSloc.latitude.toStringAsFixed(3)}, Lng: ${_GPSloc.longitude.toStringAsFixed(3)}'
-                                : 'None'
-                                : _selectedStartingPoint != null
+                            text: _selectedStartingPoint != null
                                 ? 'Lat: ${_selectedStartingPoint!.latitude.toStringAsFixed(3)}, Lng: ${_selectedStartingPoint!.longitude.toStringAsFixed(3)}'
                                 : 'None',
                             style: GoogleFonts.poppins(
@@ -1010,9 +1009,15 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                     );
                   },
                 ),
+                const SizedBox(height: 5), // Space between image and button
+
+                  Image.memory(screenshotBytes), // Display the screenshot
+                  const SizedBox(height: 5), // Space between image and button
 
               ],
             ),
+
+
             actions: <Widget>[
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1773,7 +1778,6 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
     }
     _currentLocation = await _location.getLocation();
   }
-
   void _initializeFirebaseListener() {
     _latRef = FirebaseDatabase.instance.ref().child('Current_Lat');
     _longRef = FirebaseDatabase.instance.ref().child('Current_Long');
@@ -1799,8 +1803,6 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
   void _hideKeyboard() {
     FocusScope.of(context).previousFocus();
   }
-
-
   void _showInputSelectionPopup() {
     showModalBottomSheet(
       context: context,
@@ -2663,7 +2665,6 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       }
     });
   }
-
   void _startManualMovement_UAV(List<List<LatLng>> selectedSegments, {required bool forward}) {
     if (selectedSegments.isEmpty || _selectedStartingPoint == null) {
       print("Selected segments are empty or starting point not selected, cannot start movement");
@@ -2961,7 +2962,6 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
 
 
 
-
   void _startMovement_GPS(List<LatLng> path, List<List<LatLng>> selectedSegments) {
     if (path.isEmpty || _selectedStartingPoint == null) {
       print("Path is empty or starting point not selected, cannot start movement");
@@ -2983,7 +2983,11 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
     double segmentDistanceCoveredKM = 0.0;
     double totalDistanceCoveredKM_SelectedPath = 0.0;
     double distanceCoveredInWholeJourney = 0.0;
-    LatLng? _previousPosition;  // Store previous GPS position
+    LatLng? _previousPosition; // Store previous GPS position
+
+    // Flags to manage snackbar visibility
+    bool _isOutOfTrack = false;
+    bool _isOutOfField = false;
 
     // Watch for GPS location changes
     _gpsStreamSubscription = Geolocator.getPositionStream(
@@ -3006,15 +3010,23 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
         _carPosition = currentPosition;
       });
 
-      // Calculate the distance covered using GPS data
+      // Ensure we don't exceed the bounds of the path
       if (_currentPointIndex < path.length - 1) {
         LatLng nextPoint = path[_currentPointIndex + 1];
         double segmentDistanceKM = calculateonelinedistance(currentPosition, nextPoint);
         segmentDistanceCoveredKM += calculateonelinedistance(_carPosition, nextPoint);
 
+        // Move to the next point if we've covered the segment distance
         if (segmentDistanceCoveredKM >= segmentDistanceKM) {
           _currentPointIndex++;
           segmentDistanceCoveredKM = 0.0;
+
+          // Check if we finished all segments in the selected queue
+          if (_currentPointIndex >= path.length - 1) {
+            _isMoving = false;
+            _onPathComplete();  // Only called when entire path is traversed
+            return;
+          }
         }
 
         // Distance and time calculations
@@ -3032,23 +3044,31 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
           _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
           Add_Car_Marker(true); // Re-add marker at the updated position
         });
-
-        // Check if car marker reaches the end of path
-        if (_currentPointIndex >= path.length - 1) {
-          _isMoving = false;
-          _onPathComplete();
-        }
       }
 
-      // Check if car is out of track or polygon field
-      if (!_isPointOnPath(currentPosition, path)) {
-        _showSnackbar(context, "OUT OF TRACK");
+      // Check if the car is out of the track or polygon field
+      bool isOutOfTrack = !_isPointOnPath(currentPosition, path);
+      bool isOutOfField = !_isPointInsidePolygon(currentPosition, polygons.first.points);
+
+      // Manage the snackbar visibility based on whether the car is out of track or field
+      if (isOutOfTrack && !_isOutOfTrack) {
+        _showSnackbar(context, "Out of Track");
+        _isOutOfTrack = true;
+      } else if (!isOutOfTrack && _isOutOfTrack) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        _isOutOfTrack = false;
       }
-      if (!_isPointInsidePolygon(currentPosition, polygons.first.points)) {
-        _showSnackbar(context, "OUTSIDE FIELD AREA");
+
+      if (isOutOfField && !_isOutOfField) {
+        _showSnackbar(context, "You are outside the field area");
+        _isOutOfField = true;
+      } else if (!isOutOfField && _isOutOfField) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        _isOutOfField = false;
       }
     });
   }
+
 // Helper function for smoothing GPS updates
   LatLng _smoothLocation(LatLng currentPosition, LatLng previousPosition, double alpha) {
     return LatLng(
@@ -3056,6 +3076,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       alpha * currentPosition.longitude + (1 - alpha) * previousPosition.longitude,
     );
   }
+
 // Utility functions for warning
   bool _isPointOnPath(LatLng point, List<LatLng> path) {
     for (int i = 0; i < path.length - 1; i++) {
@@ -3065,21 +3086,22 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
     }
     return false;
   }
+
   bool _isPointInsidePolygon(LatLng point, List<LatLng> polygonPoints) {
     int i, j = polygonPoints.length - 1;
     bool inside = false;
 
     for (i = 0; i < polygonPoints.length; i++) {
       if ((polygonPoints[i].longitude < point.longitude &&
-                  polygonPoints[j].longitude >= point.longitude ||
-              polygonPoints[j].longitude < point.longitude &&
-                  polygonPoints[i].longitude >= point.longitude) &&
+          polygonPoints[j].longitude >= point.longitude ||
+          polygonPoints[j].longitude < point.longitude &&
+              polygonPoints[i].longitude >= point.longitude) &&
           (polygonPoints[i].latitude <= point.latitude ||
               polygonPoints[j].latitude <= point.latitude)) {
         if (polygonPoints[i].latitude +
-                (point.longitude - polygonPoints[i].longitude) /
-                    (polygonPoints[j].longitude - polygonPoints[i].longitude) *
-                    (polygonPoints[j].latitude - polygonPoints[i].latitude) <
+            (point.longitude - polygonPoints[i].longitude) /
+                (polygonPoints[j].longitude - polygonPoints[i].longitude) *
+                (polygonPoints[j].latitude - polygonPoints[i].latitude) <
             point.latitude) {
           inside = !inside;
         }
@@ -3089,7 +3111,6 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
 
     return inside;
   }
-
 
 
 

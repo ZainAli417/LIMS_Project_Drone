@@ -25,7 +25,7 @@ class ISSAASProvider with ChangeNotifier {
     final position = await getPosition();
     _GPSloc = LatLng(position.latitude, position.longitude);
     notifyListeners();
-    }
+  }
 
   Future<Position> getPosition() async {
     bool serviceEnabled;

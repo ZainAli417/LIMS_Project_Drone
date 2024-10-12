@@ -47,6 +47,11 @@ dependencies:
   file_picker: ^8.1.2
   path: ^1.9.0
   flutter_marquee: ^2.0.1
+  flutter_polyline_points: ^2.1.0
+  dio: 4.0.0
+  flutter_google_maps_webservices: ^1.1.1
+  googlemaps_flutter_webservices: ^1.0.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -66,3 +71,4 @@ flutter:
     - images/uav_dead.png
     - images/ugv_active.png
     - images/ugv_dead.png
+    - images/gps.png

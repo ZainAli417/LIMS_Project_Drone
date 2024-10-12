@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:geolocator/geolocator.dart' as geo; // For GPS updates
 import 'dart:async';
 import 'dart:collection';
@@ -57,8 +58,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
   final GlobalKey _googleMapKey = GlobalKey(); // Key to capture GoogleMap
   late GoogleMapController _googleMapController;
   LatLng _currentPosition = LatLng(0, 0); // Default position
-  final gps.Location _location =
-      gps.Location(); // GPS location service instance
+  final gps.Location _location = gps.Location(); // GPS location service instance
   LocationData? _currentLocation; // Store the current location data
   LatLng _carPosition = LatLng(0, 0); // Store the car's current position
   late LatLng? selectedMarker = _markers.isNotEmpty
@@ -87,9 +87,11 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
   List<LatLng> polygonPoints = []; // Store vertices of polygons
   List<Marker> _markers = []; // List of markers
   final List<LatLng> _markerPositions = []; // Marker positions
-
+  Set<Marker> navmarkers = {};
+  Set<Polyline> navpolylines = {};
   // Movement and Direction Variables
   Timer? _movementTimer; // Timer to control movement updates
+  Timer? _polygonCheckTimer;  // Timer for polygon checks
   int drone_direct =
       0; // Direction for drone (0 = stop, 1 = left, 2 = right, 3 = up, 4 = down)
   double speed = 10.0; // Movement speed in meters per second
@@ -123,6 +125,8 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
   bool _ismanual = false; // Track if manual mode is enabled
   bool _isCustomMode = false; // Custom mode flag
   bool _isShapeClosed = false; // Check if shape (polygon) is closed
+  //bool _isNAVGPS = false; // Check if shape (polygon) is closed
+
   // UI for Method and File Selection
   String? _selectedLocalFilePath; // Store local file path
   String _selectedMethod = 'N/A'; // Store selected method
@@ -150,10 +154,11 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
   late BitmapDescriptor ugv_dead; // UGV dead icon
   late BitmapDescriptor uav_active; // UAV active icon
   late BitmapDescriptor uav_dead; // UAV dead icon
+  late BitmapDescriptor spr_active; // UAV dead icon
   int _currentPointIndex = 0;
   List<LatLng> _dronepath = [];
   double updateInterval = 0.1; // seconds
-  double pathWidth = 10.0;
+  double pathWidth = 5.0;
   bool _isHorizontalDirection = false;
   //USER SELECTION RECEIPT
   LatLng? _selectedStartingPoint;
@@ -165,10 +170,8 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
   double trackTolerance =
       0.01; // Define tolerance in kilometers, adjust as necessary
 
-  @override
   void initState() {
     super.initState();
-
     _controller = AnimationController(
       vsync: this,
       duration: Duration(seconds: 20),
@@ -177,47 +180,28 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
         _offset = _controller.value * 300; // Adjust according to your text width
       });
     });
-
     _controller.repeat();
-
     // Show either input popup or ONMAPTAP based on ISSAAS mode
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Accessing the ISSAASProvider to check if ISSAAS mode is active
-      bool isISSAASMode = Provider.of<ISSAASProvider>(context, listen: false).isSaas;
-
-      if (isISSAASMode) {
-        // ISSAAS mode is true, load ONMAPTAP functionality
-        _isCustomMode=true;
-        _selectedMethod = 'Manual Spray Mode'; // Store selection
-
-      } else {
-        // ISSAAS mode is false, show input selection popup
-        _showInputSelectionPopup();
-        _checkCityAndFetchData();
-        _fetchCloudFiles();
-
-      }
+      // ISSAAS mode is false, show input selection popup
+      _showInputSelectionPopup();
+      _checkCityAndFetchData();
+      _fetchCloudFiles();
     });
-
-    // Perform other initializations
+    _updateMarkersAndPolyline();
     _initializeFirebaseListener();
-
-    // Request location permissions from the user
     _requestLocationPermission();
-
-    // Initialize marker position if available
+    _fetchLocationData();
     if (_markers.isNotEmpty) {
       selectedMarker = _markers.first.position;
     }
-
-    // Set default car position
     _carPosition = LatLng(0, 0);
-
-    // Load car icons (active and dead)
     _loadCarIcons();
-   _loadCarIcons_UAV();
-
+    _loadCarIcons_UAV();
+    _loadCarIcons_GPS();
   }
+
 
 
   @override
@@ -227,8 +211,13 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
     _movementTimer?.cancel(); // Cancel movement timer if active
     _focusNode.dispose();
     _controller.dispose(); // Dispose focus node
+    _markers.clear();
     super.dispose();
   }
+
+  // Get the current location of the user
+
+  // Move the map camera to the current position
   void _resetMarkers() async {
     setState(() {
       // Reset to default values
@@ -265,11 +254,16 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
 
     return totalDistance;
   } // Return distance in kilometers
-  LatLng _lerpLatLng(LatLng a, LatLng b, double t) {
+
+
+  LatLng _lerpLatLng(LatLng a, LatLng b, double t)
+  {
     double lat = a.latitude + (b.latitude - a.latitude) * t;
     double lng = a.longitude + (b.longitude - a.longitude) * t;
     return LatLng(lat, lng);
   }
+
+
   void _storeTimeDurationInDatabase(double totalDistanceInKM) {
     try {
       const double speed = 10; // Speed in meters per second
@@ -340,10 +334,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setState) {
-            return Consumer<ISSAASProvider>(
-              builder: (context, issaasProvider, child) {
-                bool _isISSAASMode = issaasProvider.isSaas;
-                LatLng _GPSloc = issaasProvider.GPSPostions;
+
 
                 return AlertDialog(
                   titlePadding: EdgeInsets.zero,
@@ -538,11 +529,6 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                       ),
                       onPressed: () async {
                         _closePolygon(_turnLength);
-
-                        if (_isISSAASMode) {
-                          _selectedStartingPoint = _GPSloc;
-                        }
-
                         if (_selectedStartingPoint == null) {
                           setState(() {
                             isStartingPointEmpty = true;
@@ -589,8 +575,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                     )
                   ],
                 );
-              },
-            );
+
           },
         );
       },
@@ -672,6 +657,20 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       //'images/ugv_active.png', // Replace with your actual asset path
     );
   }
+  Future<void> _loadCarIcons_GPS() async {
+    // Load the image from your assets
+    const ImageConfiguration imageConfiguration = ImageConfiguration(
+      size: Size(20, 20),
+    );
+    spr_active = await BitmapDescriptor.fromAssetImage(
+      imageConfiguration,
+
+      'images/gps.png', // Replace with your actual asset path
+    );
+
+
+  }
+
   Future<void> Add_Car_Marker(bool isSelectedSegment) async {
     setState(() {
       _markers.add(Marker(
@@ -980,10 +979,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                   ),
                 ),
                 const SizedBox(height: 10),
-                Consumer<ISSAASProvider>(
-
-                  builder: (context, issaasProvider, child) {
-                  return RichText(
+         RichText(
                       text: TextSpan(
                         children: [
                           TextSpan(
@@ -1006,9 +1002,9 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                           ),
                         ],
                       ),
-                    );
-                  },
-                ),
+                    ),
+
+
                 const SizedBox(height: 5), // Space between image and button
 
                   Image.memory(screenshotBytes), // Display the screenshot
@@ -1207,7 +1203,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                           borderRadius: BorderRadius.circular(10),
                         ),
                       ),
-                      onPressed: () {
+                      onPressed: () async {
                         if (selectedSegments.isEmpty) {
                           _showWarningDialog(context);
                           return;
@@ -1225,8 +1221,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                             startIndex + 2,
                           );
                           selectedPaths.add(segment);
-                          double segmentDistance =
-                              calculate_selcted_segemnt_distance(segment);
+                          double segmentDistance = calculate_selcted_segemnt_distance(segment);
                           totalDistance += segmentDistance;
                         }
 
@@ -1245,27 +1240,30 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                           _updatePolylineColors(selectedSegments);
                         });
 
-                        // Ensure that the selected segments are passed to the _startMovement_UAV function
-                        if (!_isMoving) {
-                          if (widget.groundMode) {
-                            if (widget.isManualControl) {
-                              // Call manual movement function for UGV if manual control is enabled
-                              _startManualMovement_UGV(_dronepath, _selectedPathsQueue, forward: true);
+                        // Run GPS-based movement if isSaas is true
+                        if (context.read<ISSAASProvider>().isSaas) {
+                         _startMovement_GPS(_dronepath,_selectedPathsQueue);
+                         _updateMarkersAndPolyline();
+                        } else {
+                          // Proceed with UAV/UGV logic if isSaas is false
+                          if (!_isMoving) {
+                            if (widget.groundMode) {
+                              if (widget.isManualControl) {
+                                // Call manual movement function for UGV if manual control is enabled
+                                _startManualMovement_UGV(_dronepath, _selectedPathsQueue, forward: true);
+                              } else {
+                                // Call the default movement function for UGV otherwise
+                                _startMovement_UGV(_dronepath, _selectedPathsQueue);
+                              }
                             } else {
-                              // Call the default movement function for UGV otherwise
-                               _startMovement_UGV(_dronepath, _selectedPathsQueue);
-                            }
-                          } else {
-                            if (widget.isManualControl) {
-                              // Call manual movement function if manual control is enabled
+                              if (widget.isManualControl) {
+                                // Call manual movement function for UAV if manual control is enabled
                                 _startManualMovement_UAV(_selectedPathsQueue, forward: true);
-                            } else {
-                              // Call the default movement function otherwise
-                              _startMovement_UAV(_selectedPathsQueue);
+                              } else {
+                                // Call the default movement function otherwise
+                                _startMovement_UAV(_selectedPathsQueue);
+                              }
                             }
-                          }
-                          if (context.read<ISSAASProvider>().isSaas) {
-                            _startMovement_GPS(_dronepath, _selectedPathsQueue);
                           }
                         }
                       },
@@ -1392,7 +1390,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                           borderRadius: BorderRadius.circular(10),
                         ),
                       ),
-                      onPressed: () {
+                      onPressed: () async {
                         if (selectedSegments.isEmpty) {
                           _showWarningDialog(context);
                           return;
@@ -1423,30 +1421,32 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                           _selectedPathsQueue.addAll(selectedPaths);
 
                           // Update polyline colors
-                          _updatePolylineColors(selectedSegments,
-                              isVertical: true);
+                          _updatePolylineColors(selectedSegments, isVertical: true);
                         });
 
-                        if (!_isMoving) {
-                          if (widget.groundMode) {
-                            if (widget.isManualControl) {
-                              // Call manual movement function for UGV if manual control is enabled
-                              _startManualMovement_UGV(_dronepath, _selectedPathsQueue, forward: true);
+                        if (context.read<ISSAASProvider>().isSaas) {
+                          _startMovement_GPS(_dronepath,_selectedPathsQueue);
+                          _updateMarkersAndPolyline();
+                        } else {
+                          // Proceed with UAV/UGV logic if isSaas is false
+                          if (!_isMoving) {
+                            if (widget.groundMode) {
+                              if (widget.isManualControl) {
+                                // Call manual movement function for UGV if manual control is enabled
+                                _startManualMovement_UGV(_dronepath, _selectedPathsQueue, forward: true);
+                              } else {
+                                // Call the default movement function for UGV otherwise
+                                _startMovement_UGV(_dronepath, _selectedPathsQueue);
+                              }
                             } else {
-                              // Call the default movement function for UGV otherwise
-                               _startMovement_UGV(_dronepath, _selectedPathsQueue);
+                              if (widget.isManualControl) {
+                                // Call manual movement function for UAV if manual control is enabled
+                                _startManualMovement_UAV(_selectedPathsQueue, forward: true);
+                              } else {
+                                // Call the default movement function otherwise
+                                _startMovement_UAV(_selectedPathsQueue);
+                              }
                             }
-                          } else {
-                            if (widget.isManualControl) {
-                              // Call manual movement function if manual control is enabled
-                              _startManualMovement_UAV(_selectedPathsQueue, forward: true);
-                            } else {
-                              // Call the default movement function otherwise
-                              _startMovement_UAV(_selectedPathsQueue);
-                            }
-                          }
-                          if (context.read<ISSAASProvider>().isSaas) {
-                            _startMovement_GPS(_dronepath, _selectedPathsQueue);
                           }
                         }
                       },
@@ -1796,8 +1796,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
     });
   }
   void _updateMarkerPosition(double lat, double long) {
-    setState(() {
-      _currentPosition = LatLng(lat, long);
+    setState(() {_currentPosition = LatLng(lat, long);
     });
   }
   void _hideKeyboard() {
@@ -2339,6 +2338,8 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
     _isMoving = false;
     _movementTimer?.cancel();
   }
+
+
   void _startMovement_UGV(List<LatLng> path, List<List<LatLng>> selectedSegments) {
     if (path.isEmpty || _selectedStartingPoint == null) {
       print(
@@ -2357,8 +2358,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
     });
 
     // Decide the direction-specific marker function
-    Add_Car_Marker(_isSegmentSelected(
-        path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
+    Add_Car_Marker(_isSegmentSelected(path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
 
     // Determine movement direction based on starting point
     bool movingForward = startingPointIndex < path.length / 2;
@@ -2372,11 +2372,9 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
             LatLng start = path[_currentPointIndex];
             LatLng end = path[_currentPointIndex + 1];
             double segmentDistanceKM = calculateonelinedistance(start, end);
-            double distanceCoveredInThisTickKM =
-                (speed * updateInterval) / 1000.0;
+            double distanceCoveredInThisTickKM = (speed * updateInterval) / 1000.0;
             segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
-            double segmentProgress =
-                (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
+            double segmentProgress = (segmentDistanceCoveredKM / segmentDistanceKM).clamp(0.0, 1.0);
             _carPosition = _lerpLatLng(start, end, segmentProgress);
 
             bool isSelectedSegment = _isSegmentSelected(
@@ -2391,10 +2389,8 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
             distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
 
             if (isSelectedSegment) {
-              totalDistanceCoveredKM_SelectedPath +=
-                  distanceCoveredInThisTickKM;
-              double remainingDistanceKM_SelectedPath =
-                  _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+              totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
+              double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
               setState(() {
                 _remainingDistanceKM_SelectedPath =
                     remainingDistanceKM_SelectedPath.clamp(
@@ -2960,115 +2956,143 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
     _moveToNextSegment();
   }
 
-
-
   void _startMovement_GPS(List<LatLng> path, List<List<LatLng>> selectedSegments) {
     if (path.isEmpty || _selectedStartingPoint == null) {
       print("Path is empty or starting point not selected, cannot start movement");
       return;
     }
-
     _isMoving = true;
 
-    // Initial setup based on selected starting point
-    int startingPointIndex = _findClosestPointIndex(path, _selectedStartingPoint!);
-    setState(() {
-      _carPosition = _selectedStartingPoint!; // Start from the selected point
-      _currentPointIndex = startingPointIndex;
-    });
-
-    // Add initial car marker at the starting point
-    Add_Car_Marker(_isSegmentSelected(path, selectedSegments, _currentPointIndex, PathDirection.horizontal));
-
-    double segmentDistanceCoveredKM = 0.0;
-    double totalDistanceCoveredKM_SelectedPath = 0.0;
+    // Track total distances
     double distanceCoveredInWholeJourney = 0.0;
-    LatLng? _previousPosition; // Store previous GPS position
+    double totalDistanceCoveredKM_SelectedPath = 0.0;
+    double segmentDistanceCoveredKM = 0.0; // Distance covered in current segment
 
-    // Flags to manage snackbar visibility
-    bool _isOutOfTrack = false;
-    bool _isOutOfField = false;
+    LatLng? _previousPosition;
 
-    // Watch for GPS location changes
+    // Start GPS tracking
     _gpsStreamSubscription = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
-        accuracy: geo.LocationAccuracy.high, // High accuracy for small areas
+        accuracy: geo.LocationAccuracy.high,
       ),
     ).listen((Position position) {
       if (!_isMoving) return;
 
+      // Use the exact current GPS position as the car marker position
       LatLng currentPosition = LatLng(position.latitude, position.longitude);
 
-      // Apply low-pass filter to smooth out the GPS location
-      if (_previousPosition != null) {
-        currentPosition = _smoothLocation(currentPosition, _previousPosition!, 0.2); // Alpha for smoothing
+      // Check if the current position is within the allowed area
+      if (!_isPointInsidePolygon(currentPosition, polygonPoints) &&
+          !_isPointOnPath(currentPosition, _polylines)) {
+        _showSnackbar(context, 'You are outside the farm area, try to stay inside');
+        return; // Stop processing if outside the area
       }
-      _previousPosition = currentPosition;
 
-      // Update the car marker position
-      setState(() {
-        _carPosition = currentPosition;
-      });
+      // Check if current position matches the selected destination
+      if (_isMoving && _isAtDestination(currentPosition)) {
+        // Proceed with movement logic since the user has reached the selected destination
+        // Smooth the movement if we have a previous position (optional)
+        if (_previousPosition != null) {
+          currentPosition = _smoothLocation(currentPosition, _previousPosition!, 0.3);
+        }
 
-      // Ensure we don't exceed the bounds of the path
-      if (_currentPointIndex < path.length - 1) {
-        LatLng nextPoint = path[_currentPointIndex + 1];
-        double segmentDistanceKM = calculateonelinedistance(currentPosition, nextPoint);
-        segmentDistanceCoveredKM += calculateonelinedistance(_carPosition, nextPoint);
+        _previousPosition = currentPosition; // Store this as previous for the next tick
 
-        // Move to the next point if we've covered the segment distance
-        if (segmentDistanceCoveredKM >= segmentDistanceKM) {
-          _currentPointIndex++;
-          segmentDistanceCoveredKM = 0.0;
+        // Find the nearest point on the path to the current position
+        int closestPointIndex = _findClosestPointIndex(path, currentPosition);
 
-          // Check if we finished all segments in the selected queue
-          if (_currentPointIndex >= path.length - 1) {
-            _isMoving = false;
-            _onPathComplete();  // Only called when entire path is traversed
-            return;
+        // Movement logic based on GPS data
+        LatLng closestPoint = path[closestPointIndex];
+        LatLng nextPoint = closestPointIndex < path.length - 1 ? path[closestPointIndex + 1] : closestPoint;
+
+        // Calculate the distance between the current position and the next point
+        double distanceToNextPoint = calculateonelinedistance(currentPosition, nextPoint);
+
+        // Use the speed from GPS to calculate the distance covered
+        double speedInMetersPerSecond = position.speed;
+        double distanceCoveredInThisTickKM = (speedInMetersPerSecond * updateInterval) / 1000.0;
+        segmentDistanceCoveredKM += distanceCoveredInThisTickKM;
+
+        // If the distance covered exceeds the distance to the next point, update index
+        if (segmentDistanceCoveredKM >= distanceToNextPoint) {
+          _currentPointIndex = closestPointIndex + 1;
+          segmentDistanceCoveredKM = 0.0; // Reset segment distance for the next point
+        }
+
+        distanceCoveredInWholeJourney += distanceCoveredInThisTickKM;
+
+        // Check if the current segment is part of the selected spray path
+        bool isSelectedSegment = _isSegmentSelected(path, selectedSegments, closestPointIndex, PathDirection.horizontal);
+
+        if (isSelectedSegment) {
+          totalDistanceCoveredKM_SelectedPath += distanceCoveredInThisTickKM;
+          double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
+
+          // Update distance and time for the selected segments
+          setState(() {
+            _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
+            _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
+          });
+
+          // Sync selected path distance with Firebase if covered > 0.5km
+          if (totalDistanceCoveredKM_SelectedPath % 0.5 == 0) {
+            FirebaseDatabase.instance.ref().child('remainingDistance').set(_remainingDistanceKM_SelectedPath);
           }
         }
 
-        // Distance and time calculations
-        distanceCoveredInWholeJourney += calculateonelinedistance(_carPosition, nextPoint);
-        totalDistanceCoveredKM_SelectedPath += segmentDistanceCoveredKM;
-
-        double remainingDistanceKM_SelectedPath = _totalDistanceKM - totalDistanceCoveredKM_SelectedPath;
-
+        // Update remaining total path distance
         setState(() {
-          _remainingDistanceKM_SelectedPath = remainingDistanceKM_SelectedPath.clamp(0.0, _totalDistanceKM);
-          _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney).clamp(0.0, totalZigzagPathKm);
-          _storeTimeLeftInDatabase(_remainingDistanceKM_SelectedPath);
-
-          // Remove and update car marker
-          _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
-          Add_Car_Marker(true); // Re-add marker at the updated position
+          _remainingDistanceKM_TotalPath = (totalZigzagPathKm - distanceCoveredInWholeJourney)
+              .clamp(0.0, totalZigzagPathKm);
         });
+
+        // Update car marker position in real-time
+        setState(() {
+          _markers.removeWhere((marker) => marker.markerId == const MarkerId('car'));
+          Add_Car_Marker(isSelectedSegment);
+
+          // Ensure car marker stays exactly at the current GPS position
+          _addLiveLocationMarker(true, currentPosition);
+        });
+
+        // End of path reached, stop movement
+        if (_currentPointIndex >= path.length - 1) {
+          _isMoving = false;
+          _gpsStreamSubscription?.cancel();
+          _onPathComplete();
+        }
+      }
+    });
+
+    // Timer to check Snackbar status every second
+    Timer.periodic(const Duration(seconds: 45), (Timer timer) {
+      if (!_isMoving) {
+        timer.cancel(); // Stop the timer if not moving
+        return;
       }
 
-      // Check if the car is out of the track or polygon field
-      bool isOutOfTrack = !_isPointOnPath(currentPosition, path);
-      bool isOutOfField = !_isPointInsidePolygon(currentPosition, polygons.first.points);
-
-      // Manage the snackbar visibility based on whether the car is out of track or field
-      if (isOutOfTrack && !_isOutOfTrack) {
-        _showSnackbar(context, "Out of Track");
-        _isOutOfTrack = true;
-      } else if (!isOutOfTrack && _isOutOfTrack) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        _isOutOfTrack = false;
-      }
-
-      if (isOutOfField && !_isOutOfField) {
-        _showSnackbar(context, "You are outside the field area");
-        _isOutOfField = true;
-      } else if (!isOutOfField && _isOutOfField) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        _isOutOfField = false;
-      }
     });
   }
 
+// Function to determine if the current position is at the destination
+  bool _isAtDestination(LatLng currentPosition) {
+    // Check if current position is close enough to the selected destination
+    const double epsilon = 0.0001; // Adjust this value based on precision needed
+    return (currentPosition.latitude - _selectedStartingPoint!.latitude).abs() < epsilon &&
+        (currentPosition.longitude - _selectedStartingPoint!.longitude).abs() < epsilon;
+  }
+// Helper function to add live location marker exactly at current position
+  void _addLiveLocationMarker(bool isSelectedSegment, LatLng currentPosition) {
+    _markers.add(
+      Marker(
+        markerId: const MarkerId('gps'),
+        position: currentPosition, // Marker now uses exact current GPS position
+        icon: isSelectedSegment
+            ? spr_active
+            : spr_active,
+        ),
+    );
+  }
 // Helper function for smoothing GPS updates
   LatLng _smoothLocation(LatLng currentPosition, LatLng previousPosition, double alpha) {
     return LatLng(
@@ -3076,17 +3100,18 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       alpha * currentPosition.longitude + (1 - alpha) * previousPosition.longitude,
     );
   }
-
-// Utility functions for warning
-  bool _isPointOnPath(LatLng point, List<LatLng> path) {
-    for (int i = 0; i < path.length - 1; i++) {
-      if (calculateonelinedistance(point, path[i]) < trackTolerance) {
-        return true;
+/// Utility function to check if a point is near any of the polyline paths
+  bool _isPointOnPath(LatLng point, Set<Polyline> polylines) {
+    for (Polyline polyline in polylines) {
+      List<LatLng> path = polyline.points;
+      for (int i = 0; i < path.length - 1; i++) {
+        if (calculateonelinedistance(point, path[i]) < trackTolerance) {
+          return true;
+        }
       }
     }
     return false;
   }
-
   bool _isPointInsidePolygon(LatLng point, List<LatLng> polygonPoints) {
     int i, j = polygonPoints.length - 1;
     bool inside = false;
@@ -3111,12 +3136,187 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
 
     return inside;
   }
+/*
+  Future<List<LatLng>> getRoutePoints(LatLng origin, LatLng destination) async {
+    const String apiKey = 'AIzaSyD8ZZ1l0zoTBL0AxyALg5e-TJmVYc2QWHo'; // Add your Google API key here
+    final String url =
+        'https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&key=$apiKey';
 
+    final response = await http.get(Uri.parse(url));
 
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
 
+      if (data['status'] == 'OK') {
+        var route = data['routes'][0];
+        var points = route['overview_polyline']['points'];
 
+        return _decodePolyline(points);
+      }
+    }
 
+    return [];
+  }
+// Polyline decoding function
+  List<LatLng> _decodePolyline(String polyline) {
+    List<LatLng> coordinates = [];
+    int index = 0, len = polyline.length;
+    int lat = 0, lng = 0;
 
+    while (index < len) {
+      int b, shift = 0, result = 0;
+      do {
+        b = polyline.codeUnitAt(index++) - 63;
+        result |= (b & 0x1F) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      int dlat = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+      do {
+        b = polyline.codeUnitAt(index++) - 63;
+        result |= (b & 0x1F) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      int dlng = ((result & 1) != 0 ? ~(result >> 1) : (result >> 1));
+      lng += dlng;
+
+      final LatLng point = LatLng((lat / 1E5).toDouble(), (lng / 1E5).toDouble());
+      coordinates.add(point);
+    }
+
+    return coordinates;
+  }
+  void _updateMarkersAndPolyline() async {
+    if (_currentLocation != null && _selectedStartingPoint != null) {
+      LatLng currentLatLng = LatLng(_currentLocation!.latitude!, _currentLocation!.longitude!);
+
+      // Fetch the route from Google Directions API
+      List<LatLng> routePoints = await getRoutePoints(currentLatLng, _selectedStartingPoint!);
+
+      setState(() {
+        // Create source marker
+        Marker sourceMarker = Marker(
+          markerId: const MarkerId('source'),
+          position: currentLatLng,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          infoWindow: const InfoWindow(title: 'Source'),
+        );
+
+        // Create destination marker
+        Marker destinationMarker = Marker(
+          markerId: const MarkerId('destination'),
+          position: _selectedStartingPoint!,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose),
+          infoWindow: const InfoWindow(title: 'Destination'),
+        );
+
+        // Clear existing markers
+        navmarkers.clear();
+        navmarkers.add(sourceMarker);
+        navmarkers.add(destinationMarker);
+
+        // Create polyline with the route points
+        Polyline polyline = Polyline(
+          polylineId: PolylineId('navroute'),
+          color: Colors.blue,
+          width: 5,
+          points: routePoints, // Use the route points from the API
+        );
+
+        // Clear existing polylines and add the new one
+        navpolylines.clear();
+        navpolylines.add(polyline);
+
+        // Move the camera to the source location
+        _googleMapController.animateCamera(CameraUpdate.newLatLngBounds(_boundsFromLatLngList(routePoints), 50));
+      });
+    }
+  }
+// Function to calculate LatLngBounds from a list of points
+  LatLngBounds _boundsFromLatLngList(List<LatLng> list) {
+    assert(list.isNotEmpty);
+    double x0 = list.first.latitude, x1 = list.first.latitude;
+    double y0 = list.first.longitude, y1 = list.first.longitude;
+
+    for (LatLng latLng in list) {
+      if (latLng.latitude > x1) x1 = latLng.latitude;
+      if (latLng.latitude < x0) x0 = latLng.latitude;
+      if (latLng.longitude > y1) y1 = latLng.longitude;
+      if (latLng.longitude < y0) y0 = latLng.longitude;
+    }
+
+    return LatLngBounds(
+      northeast: LatLng(x1, y1),
+      southwest: LatLng(x0, y0),
+    );
+  }
+  void _fetchLocationData() async {
+    // Fetch the location data asynchronously
+    _currentLocation = await _location.getLocation();
+    if (_currentLocation != null && _selectedStartingPoint != null) {
+      _updateMarkersAndPolyline();
+    }
+  }
+*/
+    void _updateMarkersAndPolyline() {
+    if (_currentLocation != null && _selectedStartingPoint != null) {
+      setState(() {
+        // Convert _currentLocation to LatLng
+        LatLng currentLatLng = LatLng(_currentLocation!.latitude!, _currentLocation!.longitude!);
+
+        // Create source marker
+        Marker sourceMarker = Marker(
+          markerId: const MarkerId('source'),
+          position: currentLatLng, // Use currentLatLng
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          infoWindow: const InfoWindow(title: 'Source'),
+        );
+
+        // Create destination marker
+        Marker destinationMarker = Marker(
+          markerId: const MarkerId('destination'),
+          position: _selectedStartingPoint!,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose),
+          infoWindow: const InfoWindow(title: 'Destination'),
+        );
+
+        // Clear existing markers
+        navmarkers.clear();
+        navmarkers.add(sourceMarker);
+        navmarkers.add(destinationMarker);
+
+        // Create polyline
+        Polyline polyline = Polyline(
+          polylineId: PolylineId('navroute'),
+          color: Colors.red,
+          width: 5,
+          points: [
+            currentLatLng, // Start at current location
+            LatLng(_selectedStartingPoint!.latitude, _selectedStartingPoint!.longitude),
+          ],
+        );
+
+        // Clear existing polylines and add the new one
+        navpolylines.clear();
+        navpolylines.add(polyline);
+
+        // Move the camera to the source location
+        _googleMapController.animateCamera(CameraUpdate.newLatLng(currentLatLng));
+      });
+    }
+  }
+
+  void _fetchLocationData() async {
+    // Fetch the location data asynchronously
+    _currentLocation = await _location.getLocation();
+    if (_currentLocation != null && _selectedStartingPoint != null) {
+      _updateMarkersAndPolyline();
+    }
+  }
+// Add the markers to the set
 //UI BUILD
   @override
   Widget build(BuildContext context) {
@@ -4083,6 +4283,211 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                 )
               ],
             ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0), // Reduced padding
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(15.0), // Capsule shape
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white70,
+                    border: Border.all(color: Colors.grey.shade300, width: 1.0), // Subtle border
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        spreadRadius: 1,
+                        blurRadius: 5,
+                        offset: Offset(0, 2), // Shadow for better visibility
+                      ),
+                    ],
+                  ),
+                  child: Column(
+
+                    children: [
+                      // TypeAheadField remains untouched
+                      TypeAheadField<geocoding.Placemark>(
+                        textFieldConfiguration: TextFieldConfiguration(
+                          focusNode: _focusNode,
+                          autofocus: false,
+                          style: TextStyle(
+                            fontFamily: GoogleFonts.poppins().fontFamily,
+                            fontSize: 15.0, // Customize font size
+                            color: Colors.black, // Customize text color
+                          ),
+                          decoration: InputDecoration(
+                            border: InputBorder.none,
+                            labelText: 'Search Spraying Location',
+                            labelStyle: TextStyle(
+                              fontFamily: GoogleFonts.poppins().fontFamily,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14.0,
+                              color: const Color(0xFF037441),
+                            ),
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.search, color: Colors.black),
+                              onPressed: _hideKeyboard, // Hide keyboard on search button press
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                          ),
+                        ),
+                        suggestionsCallback: (pattern) {
+                          if (pattern.isEmpty) {
+                            return Future.value(<geocoding.Placemark>[]);
+                          }
+                          _debounce?.cancel();
+                          final completer = Completer<List<geocoding.Placemark>>();
+                          _debounce = Timer(const Duration(milliseconds: 300), () async {
+                            List<geocoding.Placemark> placemarks = [];
+                            try {
+                              List<geocoding.Location> locations = await geocoding.locationFromAddress(pattern);
+                              if (locations.isNotEmpty) {
+                                placemarks = await Future.wait(
+                                  locations.map((location) => geocoding.placemarkFromCoordinates(
+                                    location.latitude,
+                                    location.longitude,
+                                  )),
+                                ).then((results) => results.expand((x) => x).toList());
+                              }
+                            } catch (e) {
+                              // Handle error if needed
+                            }
+                            completer.complete(placemarks);
+                          });
+                          return completer.future;
+                        },
+                        itemBuilder: (context, geocoding.Placemark suggestion) {
+                          return ListTile(
+                            leading: const Icon(Icons.location_on, color: Colors.green),
+                            title: Text(
+                              suggestion.name ?? 'No Country/City Available',
+                              style: TextStyle(
+                                fontFamily: GoogleFonts.poppins().fontFamily,
+                                fontSize: 16.0,
+                                fontWeight: FontWeight.w400,
+                                color: Colors.black,
+                              ),
+                            ),
+                            subtitle: Text(
+                              suggestion.locality ?? 'No locality Exists',
+                              style: TextStyle(
+                                fontFamily: GoogleFonts.poppins().fontFamily,
+                                fontSize: 14.0,
+                                color: Colors.black54,
+                              ),
+                            ),
+                          );
+                        },
+                        onSuggestionSelected: (geocoding.Placemark suggestion) async {
+                          final address = '${suggestion.name ?? ''}, ${suggestion.locality ?? ''}';
+                          try {
+                            List<geocoding.Location> locations = await geocoding.locationFromAddress(address);
+                            if (locations.isNotEmpty) {
+                              final location = locations.first;
+
+                              // Set the selected destination point
+                              setState(() {
+                                _selectedStartingPoint = LatLng(location.latitude, location.longitude);
+                              });
+
+                              // Animate camera to selected location
+                              _googleMapController.animateCamera(
+                                CameraUpdate.newCameraPosition(
+                                  CameraPosition(
+                                    target: LatLng(location.latitude, location.longitude),
+                                    zoom: 15.0,
+                                  ),
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            print('Error: $e');
+                          }
+                        },
+                      ),
+
+
+                      if (_currentLocation != null) Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 25.0, vertical: 5.0),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.location_on, color: Colors.green, size: 20), // Icon for current location
+                            const SizedBox(width: 5),
+                            Text(
+                              'Starting Point:',
+
+                              style: TextStyle(
+                                fontFamily: GoogleFonts.poppins().fontFamily,
+                                fontSize: 14.0, // Smaller font
+                                color: Colors.black,
+                                fontWeight: FontWeight.w700, // Bold font
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.all(5),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.blueAccent),
+                                  borderRadius: BorderRadius.circular(5),
+                                ),
+                                child: Text(
+                                  '${_currentLocation!.latitude?.toStringAsFixed(4)}, ${_currentLocation!.longitude?.toStringAsFixed(4)}',
+                                  style: TextStyle(
+                                    fontFamily: GoogleFonts.poppins().fontFamily,
+                                    fontSize: 13.0, // Smaller font
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      if (_selectedStartingPoint != null) Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 25.0, vertical: 5.0),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.location_on, color: Colors.red, size: 20), // Icon for destination
+                            const SizedBox(width: 5),
+                            Text(
+                              'Current Position:',
+
+                              style: TextStyle(
+                                fontFamily: GoogleFonts.poppins().fontFamily,
+                                fontSize: 14.0, // Smaller font
+                                color: Colors.black,
+                                fontWeight: FontWeight.w700, // Bold font
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.all(5),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.blueAccent),
+                                  borderRadius: BorderRadius.circular(5),
+                                ),
+                                child: Text(
+                                  '${_selectedStartingPoint!.latitude.toStringAsFixed(4)}, ${_selectedStartingPoint!.longitude.toStringAsFixed(4)}',
+                                  style: TextStyle(
+                                    fontFamily: GoogleFonts.poppins().fontFamily,
+                                    fontSize: 13.0, // Smaller font
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
             Container(
               height: _isFullScreen
                   ? MediaQuery.of(context).size.height * 0.85
@@ -4103,44 +4508,40 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                           :RepaintBoundary(
                         key: _googleMapKey, // Attach the key to GoogleMap
                         child: GoogleMap(
-                          initialCameraPosition: _currentLocation != null
-                              ? CameraPosition(
-                            target: LatLng(
-                              _currentLocation!.latitude!,
-                              _currentLocation!.longitude!,
-                            ),
-                            zoom: 15.0,
-                          )
-                              : const CameraPosition(
-                            target: LatLng(0, 0), // Default fallback position
-                            zoom: 3.0, // Low zoom for global view
+                          initialCameraPosition: CameraPosition(
+                            target: _currentLocation != null
+                                ? LatLng(_currentLocation!.latitude!, _currentLocation!.longitude!)
+                                : LatLng(0, 0), // Default fallback position
+                            zoom: _currentLocation != null ? 25.0 : 4.0, // Zoom in when current location is available
                           ),
                           markers: {
                             ..._markers,
-                            if (_currentPosition != null)
-                              Marker(
-                                markerId: const MarkerId('currentLocation'),
-                                position: _currentPosition,
-                                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
-                              ),
+                            if (Provider.of<ISSAASProvider>(context).isSaas) ...navmarkers,
                           },
-                          polylines: _polylines,
+                          polylines: {
+                            ..._polylines,
+                            if (Provider.of<ISSAASProvider>(context).isSaas &&
+                                _selectedStartingPoint != null &&
+                                _currentLocation != null) ...navpolylines,
+                          },
                           polygons: {
                             if (!Provider.of<ISSAASProvider>(context).isSaas)
                               ..._FieldPolygons, // Load field detection polygons only if not in SaaS mode
                             ...polygons, // Always load custom polygons
                           },
+                          mapType: MapType.hybrid, // Set the map type to Satellite view
                           zoomGesturesEnabled: true,
                           rotateGesturesEnabled: true,
                           scrollGesturesEnabled: true,
                           buildingsEnabled: true,
                           onTap: _isCustomMode ? _onMapTap : null,
                           myLocationEnabled: true,
-                          myLocationButtonEnabled: false,
+                          myLocationButtonEnabled: true,
                           onMapCreated: (controller) {
                             _googleMapController = controller;
                             // Camera animation is now handled separately.
                             _checkCityAndFetchData(); // Fetch and display Field data on map creation
+                            _updateMarkersAndPolyline();
                           },
                           gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
                             Factory<OneSequenceGestureRecognizer>(
@@ -4150,138 +4551,8 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                       ),
 
                     ),
-                    Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: ClipRRect(
-                        borderRadius:
-                            BorderRadius.circular(30.0), // Capsule shape
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            color: Colors.white,
-                          ),
-                          child: TypeAheadField<geocoding.Placemark>(
-                            textFieldConfiguration: TextFieldConfiguration(
-                              focusNode: _focusNode,
-                              autofocus: false,
-                              style: TextStyle(
-                                fontFamily: GoogleFonts.poppins().fontFamily,
 
-                                fontSize: 15.0, // Customize font size
-                                color: Colors.black, // Customize text color
-                              ),
-                              decoration: InputDecoration(
-                                border: InputBorder.none,
-                                labelText: 'Search Spraying Location',
-                                labelStyle: TextStyle(
-                                  fontFamily: GoogleFonts.poppins().fontFamily,
-                                  fontWeight: FontWeight
-                                      .w600, // Replace with your font family
-                                  fontSize: 14.0, // Customize label font size
-                                  color: Color(
-                                      0xFF037441), // Customize label color
-                                ),
-                                suffixIcon: IconButton(
-                                  icon: const Icon(Icons.search,
-                                      color:
-                                          Colors.black), // Customize icon color
-                                  onPressed:
-                                      _hideKeyboard, // Hide keyboard on search button press
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16.0, vertical: 12.0),
-                              ),
-                            ),
-                            suggestionsCallback: (pattern) {
-                              if (pattern.isEmpty) {
-                                return Future.value(<geocoding.Placemark>[]);
-                              }
-                              _debounce?.cancel();
-                              final completer =
-                                  Completer<List<geocoding.Placemark>>();
-                              _debounce = Timer(const Duration(microseconds: 1),
-                                  () async {
-                                List<geocoding.Placemark> placemarks = [];
-                                try {
-                                  List<geocoding.Location> locations =
-                                      await geocoding
-                                          .locationFromAddress(pattern);
-                                  if (locations.isNotEmpty) {
-                                    placemarks = await Future.wait(
-                                      locations.map((location) =>
-                                          geocoding.placemarkFromCoordinates(
-                                            location.latitude,
-                                            location.longitude,
-                                          )),
-                                    ).then((results) =>
-                                        results.expand((x) => x).toList());
-                                  }
-                                } catch (e) {
-                                  // Handle error if needed
-                                }
-                                completer.complete(placemarks);
-                              });
-                              return completer.future;
-                            },
-                            itemBuilder:
-                                (context, geocoding.Placemark suggestion) {
-                              return ListTile(
-                                leading: const Icon(Icons.location_on,
-                                    color:
-                                        Colors.green), // Customize icon color
-                                title: Text(
-                                  suggestion.name ??
-                                      'No Country/City Available',
-                                  style: TextStyle(
-                                    fontFamily:
-                                        GoogleFonts.poppins().fontFamily,
-                                    fontSize: 16.0,
-                                    fontWeight:
-                                        FontWeight.w400, // Customize font size
-                                    color: Colors.black, // Customize text color
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  suggestion.locality ?? 'No locality Exists',
-                                  style: TextStyle(
-                                    fontFamily:
-                                        GoogleFonts.poppins().fontFamily,
 
-                                    fontSize: 14.0, // Customize font size
-                                    color:
-                                        Colors.black54, // Customize text color
-                                  ),
-                                ),
-                              );
-                            },
-                            onSuggestionSelected:
-                                (geocoding.Placemark suggestion) async {
-                              final address =
-                                  '${suggestion.name ?? ''}, ${suggestion.locality ?? ''}';
-                              try {
-                                List<geocoding.Location> locations =
-                                    await geocoding
-                                        .locationFromAddress(address);
-                                if (locations.isNotEmpty) {
-                                  final location = locations.first;
-
-                                  _googleMapController.animateCamera(
-                                    CameraUpdate.newCameraPosition(
-                                      CameraPosition(
-                                        target: LatLng(location.latitude,
-                                            location.longitude),
-                                        zoom: 15.0,
-                                      ),
-                                    ),
-                                  );
-                                }
-                              } catch (e) {
-                                print('Error: $e');
-                              }
-                            },
-                          ),
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -4513,6 +4784,10 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
         await _fetchFieldData(
             'https://overpass-api.de/api/interpreter?data=[out:json];area["landuse"~"grass|meadow|farmland|orchard|village_green|recreation_ground|park|garden|allotments"](33.6600,73.1000,34.2000,73.3000);(._;>;);out;');
         break;
+      case 'australia':
+        await _fetchFieldData(
+            'https://overpass-api.de/api/interpreter?data=[out:json];area["landuse"~"grass|meadow|farmland|orchard|village_green|recreation_ground|park|garden|allotments"](33.6600,73.1000,34.2000,73.3000);(._;>;);out;');
+        break;
       case 'rawalpindi':
         await _fetchFieldData(
             'https://overpass-api.de/api/interpreter?data=[out:json];area["landuse"~"grass|meadow|farmland|orchard|village_green|recreation_ground|park|garden|allotments"](33.5667,73.0500,33.7167,73.2000);(._;>;);out;');
@@ -4628,7 +4903,8 @@ double _calculateSphericalPolygonArea(List<LatLng> points) {
 
     return areaInAcres;
   }
-//below stripping the triangle method to find area was used but unsuccessful results
+
+  //below stripping the triangle method to find area was used but unsuccessful results
 /*
   double _calculateSphericalPolygonArea(List<LatLng> points) {
     const double radiusOfEarth = 6378137.0; // Earth's radius in meters
@@ -4771,6 +5047,9 @@ double _calculateSphericalPolygonArea(List<LatLng> points) {
     return areaInAcres;
   }*/
 }
+
+
+
 void _showSnackbar(BuildContext context, String message) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(

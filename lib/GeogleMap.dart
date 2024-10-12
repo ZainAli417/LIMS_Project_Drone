@@ -196,7 +196,7 @@ class _MapPageState extends State<MapPage> {
                       color: Colors.greenAccent,
                       size: 24,
                     ),
-                    SizedBox(height: 5),
+                    const SizedBox(height: 5),
                     Text(
                       'Time Remaining',
                       style: TextStyle(

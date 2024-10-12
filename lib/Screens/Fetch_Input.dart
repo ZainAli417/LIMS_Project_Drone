@@ -169,6 +169,9 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
   StreamSubscription<Position>? _gpsStreamSubscription;
   double trackTolerance =
       0.01; // Define tolerance in kilometers, adjust as necessary
+  late final List<LatLng> routePoints;
+  late final List<dynamic> legs;
+
 
   void initState() {
     super.initState();
@@ -2984,7 +2987,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       // Check if the current position is within the allowed area
       if (!_isPointInsidePolygon(currentPosition, polygonPoints) &&
           !_isPointOnPath(currentPosition, _polylines)) {
-        _showSnackbar(context, 'You are outside the farm area, try to stay inside');
+       // _showSnackbar(context, 'You are outside the farm area, try to stay inside');
         return; // Stop processing if outside the area
       }
 
@@ -3136,7 +3139,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
 
     return inside;
   }
-
+  //NAV DATA LOGIC
   void _fetchLocationData() async {
     // Fetch the location data asynchronously
     _currentLocation = await _location.getLocation();
@@ -3144,31 +3147,259 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       _updateMarkersAndPolyline();
     }
   }
-  Future<List<LatLng>> getRoutePoints(LatLng origin, LatLng destination) async {
+
+
+  bool isNavigating = false; // Track navigation state
+  String? instruction; // To hold navigation instruction
+  double remainingDistance = 0; // To hold remaining distance
+  int eta = 0; // To hold ETA
+
+  String _formatInstruction(String instruction) {
+    // Remove <b> tags
+    instruction = instruction.replaceAll(RegExp(r'<b>|</b>'), '');
+
+    // Append arrow symbols
+    instruction += ' ';
+    if (instruction.contains('north')) {
+      instruction += '↑';
+    } else if (instruction.contains('south')) {
+      instruction += '↓';
+    } else if (instruction.contains('east')) {
+      instruction += '→';
+    } else if (instruction.contains('west')) {
+      instruction += '←';
+    }
+
+    return instruction;
+  }
+  void _startNavigation() async {
+    setState(() {
+      isNavigating = true; // Set navigation state to true
+    });
+
+    bool reachedDestination = false;
+    LocationData? currentLocation;
+    int stepIndex = 0;
+
+    List<dynamic> steps = await _getNavigationSteps(
+      LatLng(_currentLocation!.latitude!, _currentLocation!.longitude!),
+      _selectedStartingPoint!,
+    );
+
+    while (!reachedDestination) {
+      currentLocation = await _location.getLocation();
+      LatLng currentLatLng =
+      LatLng(currentLocation.latitude!, currentLocation.longitude!);
+
+      double distanceToDestination =
+      _calculateDistance(currentLatLng, _selectedStartingPoint!);
+
+      if (distanceToDestination < 1) {
+        reachedDestination = true;
+       _showSnackbar_connection (context, 'You have reached your destination!');
+        return;
+      }
+
+      LatLng nextStepLocation = _getStepLatLng(steps[stepIndex]);
+      double distanceToStep = _calculateDistance(currentLatLng, nextStepLocation);
+
+      if (distanceToStep < 10) {
+        if (stepIndex < steps.length - 1) {
+          stepIndex++;
+        } else {
+          reachedDestination = true;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('You have reached your destination!')),
+          );
+          return;
+        }
+      }
+
+      instruction = _formatInstruction(steps[stepIndex]['html_instructions']);
+      remainingDistance = _calculateRemainingDistance(steps, stepIndex, currentLatLng);
+      eta = _calculateETA(remainingDistance);
+
+      List<LatLng> remainingRoute = _getRemainingRoutePoints(steps, stepIndex, currentLatLng);
+      setState(() {
+        navpolylines.clear();
+        navpolylines.add(Polyline(
+          polylineId: const PolylineId('navroute'),
+          color: Colors.redAccent,
+          width: 4,
+          points: remainingRoute,
+        ));
+      });
+
+      await Future.delayed(const Duration(seconds: 2));
+    }
+  }
+
+  Widget _showNavigationCard() {
+    if (!isNavigating) return Container(); // Return empty container if not navigating
+
+    return Card(
+      color: Colors.white, // Set card background color to white
+      //color: Colors.white70,
+      margin: const EdgeInsets.all(6),
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              instruction ?? '',
+              style:  TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Colors.indigo[800], // Set instruction text color to indigo
+                fontFamily:
+                GoogleFonts.poppins().fontFamily,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Distance: ${remainingDistance.toStringAsFixed(1)} m  ',
+                  style:  TextStyle(
+                    color: Colors.black87, // Set distance text color to black
+                    fontWeight: FontWeight.w500,
+                    fontFamily: GoogleFonts.poppins().fontFamily,
+                  ),
+                ),
+                Text(
+                  'ETA: ${eta ~/ 60} min',
+                  style: const TextStyle(
+                    color: Colors.black87, // Set ETA text color to black
+                    fontFamily: 'Poppins', // Use Google Fonts Poppins
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  void _updateMarkersAndPolyline() async {
+    if (_currentLocation != null && _selectedStartingPoint != null) {
+      LatLng currentLatLng = LatLng(
+        _currentLocation!.latitude!,
+        _currentLocation!.longitude!,
+      );
+
+      // Fetch the route data from Google Directions API
+      final response = await getRoutePoints(currentLatLng, _selectedStartingPoint!);
+
+      if (response == null || response.isEmpty) {
+        print('No route points available');
+        return; // Stop execution if no route data is available
+      }
+
+      setState(() {
+        // Create source marker
+        Marker sourceMarker = Marker(
+          markerId: const MarkerId('source'),
+          position: currentLatLng,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        );
+
+        // Create destination marker
+        Marker destinationMarker = Marker(
+          markerId: const MarkerId('destination'),
+          position: _selectedStartingPoint!,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose),
+        );
+
+        // Clear existing markers
+        navmarkers.clear();
+        navmarkers.add(sourceMarker);
+        navmarkers.add(destinationMarker);
+
+        // Get the route points from the response
+        var legs = response['routes'][0]['legs'] as List;
+        var steps = legs[0]['steps'] as List;
+
+        // Decode and store all the route points
+        List<LatLng> routePoints = [];
+        for (var step in steps) {
+          String encodedPolyline = step['polyline']['points'];
+          routePoints.addAll(_decodePolyline(encodedPolyline));
+        }
+
+        // Ensure the last point in routePoints matches the destination
+        if (routePoints.isNotEmpty) {
+          LatLng lastPoint = routePoints.last;
+          if (lastPoint.latitude != _selectedStartingPoint!.latitude ||
+              lastPoint.longitude != _selectedStartingPoint!.longitude) {
+            routePoints.add(_selectedStartingPoint!); // Add the destination to ensure it’s included
+          }
+        } else {
+          // If there are no route points, add the destination directly
+          routePoints.add(_selectedStartingPoint!);
+        }
+
+        // Create polyline with the route points
+        Polyline polyline = Polyline(
+          polylineId: const PolylineId('navroute'),
+          color: Colors.redAccent,
+          width: 4,
+          geodesic: true,
+          points: routePoints,
+        );
+
+        // Clear existing polylines and add the new one
+        navpolylines.clear();
+        navpolylines.add(polyline);
+
+        // Move the camera to the route bounds
+        _googleMapController.animateCamera(
+          CameraUpdate.newLatLngBounds(
+            _boundsFromLatLngList(routePoints),
+            50,
+          ),
+        );
+      });
+    }
+  }
+
+  Future<List<dynamic>> _getNavigationSteps(LatLng origin, LatLng destination) async {final response = await getRoutePoints(origin, destination);
+
+  if (response != null && response.isNotEmpty) {
+    final legs = response['routes'][0]['legs'] as List;
+    if (legs.isNotEmpty) {
+      return legs[0]['steps']; // Extract steps from the first leg
+    }
+  }
+  return [];
+  }
+  Future<Map<String, dynamic>?> getRoutePoints(LatLng origin, LatLng destination) async {
     const String apiKey = 'AIzaSyDNToFfTa1a7WqcxS1PlC382Oem1MpHeHA'; // Replace with your API key
     final String url =
-        'https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}'
+        'https://maps.googleapis.com/maps/api/directions/json'
+        '?origin=${origin.latitude},${origin.longitude}'
         '&destination=${destination.latitude},${destination.longitude}'
         '&mode=walking&key=$apiKey'; // Use walking mode
 
-    final response = await http.get(Uri.parse(url));
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
+    try {
+      final response = await http.get(Uri.parse(url));
 
-      if (data['status'] == 'OK') {
-        var route = data['routes'][0];
-        var points = route['overview_polyline']['points'];
-
-        // Decode and return the polyline points
-        List<LatLng> routePoints = _decodePolyline(points);
-
-        // Ensure the polyline starts and ends at the exact source and destination points
-        return [origin, ...routePoints, destination];
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['status'] == 'OK') {
+          return data; // Return the entire response
+        } else {
+          print('API Error: ${data['status']}');
+        }
+      } else {
+        print('HTTP Error: ${response.statusCode}');
       }
+    } catch (e) {
+      print('Exception: $e');
     }
-
-    return [];
+    return null; // Return null if any error occurs
   }
   List<LatLng> _decodePolyline(String polyline) {
     List<LatLng> coordinates = [];
@@ -3199,61 +3430,14 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       coordinates.add(point);
     }
 
+    // Add a small offset to the coordinates to ensure they are not exactly on the road
+    for (int i = 0; i < coordinates.length; i++) {
+      coordinates[i] = LatLng(coordinates[i].latitude + 0.00001, coordinates[i].longitude + 0.00001);
+    }
+
     return coordinates;
   }
-  void _updateMarkersAndPolyline() async {
-    if (_currentLocation != null && _selectedStartingPoint != null) {
-      LatLng currentLatLng = LatLng(_currentLocation!.latitude!, _currentLocation!.longitude!);
 
-      // Fetch the route from Google Directions API
-      List<LatLng> routePoints = await getRoutePoints(currentLatLng, _selectedStartingPoint!);
-
-      if (routePoints.isEmpty) {
-        print('No route points available');
-        return; // Stop execution if route points are empty
-      }
-
-      setState(() {
-        // Create source marker
-        Marker sourceMarker = Marker(
-          markerId: const MarkerId('source'),
-          position: currentLatLng,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: const InfoWindow(title: 'Source'),
-        );
-
-        // Create destination marker
-        Marker destinationMarker = Marker(
-          markerId: const MarkerId('destination'),
-          position: _selectedStartingPoint!,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose),
-          infoWindow: const InfoWindow(title: 'Destination'),
-        );
-
-        // Clear existing markers
-        navmarkers.clear();
-        navmarkers.add(sourceMarker);
-        navmarkers.add(destinationMarker);
-
-        // Create polyline with the route points
-        Polyline polyline = Polyline(
-          polylineId: PolylineId('navroute'),
-          color: Colors.redAccent,
-          width: 4,
-          points: routePoints,
-        );
-
-        // Clear existing polylines and add the new one
-        navpolylines.clear();
-        navpolylines.add(polyline);
-
-        // Move the camera to the route bounds
-        _googleMapController.animateCamera(
-          CameraUpdate.newLatLngBounds(_boundsFromLatLngList(routePoints), 50),
-        );
-      });
-    }
-  }
   LatLngBounds _boundsFromLatLngList(List<LatLng> list) {
     if (list.isEmpty) {
       throw Exception('LatLng list is empty. Cannot calculate bounds.');
@@ -3274,6 +3458,59 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       southwest: LatLng(x0, y0),
     );
   }
+
+
+
+// Helper: Extract LatLng from a step
+  LatLng _getStepLatLng(dynamic step) {
+    return LatLng(
+      step['end_location']['lat'],
+      step['end_location']['lng'],
+    );
+  }
+  double _calculateDistance(LatLng point1, LatLng point2) {
+    const double R = 6371000; // Earth's radius in meters
+    double dLat = _degreesToRadians(point2.latitude - point1.latitude);
+    double dLng = _degreesToRadians(point2.longitude - point1.longitude);
+    double a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(_degreesToRadians(point1.latitude)) *
+            cos(_degreesToRadians(point2.latitude)) *
+            sin(dLng / 2) *
+            sin(dLng / 2);
+    double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return R * c;
+  }
+  double _degreesToRadians(double degrees) {
+    return degrees * pi / 180;
+  }
+// Helper: Calculate remaining distance from current position
+  double _calculateRemainingDistance(List<dynamic> steps, int stepIndex, LatLng currentLocation) {
+    double remainingDistance = _calculateDistance(
+        currentLocation, _getStepLatLng(steps[stepIndex]));
+
+    for (int i = stepIndex + 1; i < steps.length; i++) {
+      remainingDistance += steps[i]['distance']['value'];
+    }
+    return remainingDistance;
+  }
+// Helper: Calculate estimated time of arrival (ETA) in seconds
+  int _calculateETA(double remainingDistance) {
+    const double averageWalkingSpeed = 1.4; // meters per second
+    return (remainingDistance / averageWalkingSpeed).round();
+  }
+// Helper: Get remaining route points from the steps
+  List<LatLng> _getRemainingRoutePoints(List<dynamic> steps, int stepIndex, LatLng currentLocation) {List<LatLng> points = [currentLocation];
+
+    for (int i = stepIndex; i < steps.length; i++) {
+      points.add(_getStepLatLng(steps[i]));
+    }
+
+    return points;
+  }
+
+
+
+
 
 
 
@@ -4444,11 +4681,50 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                           ],
                         ),
                       ),
+                      if (_selectedStartingPoint != null)
+                       Center(
+                       child: Container(
+                          width: double.infinity, // custom width
+                          child: Row(
+                            children: [
+                              if (!isNavigating)
+
+                                Container(
+                                width: 130, // custom width for FAB
+                                height: 55, // custom height for FAB
+
+                                child: FloatingActionButton.extended(
+                                  onPressed: () {
+                                    _startNavigation(); // Call the function when FAB is pressed
+                                  },
+                                  backgroundColor: Colors.indigo[800], // FAB background color
+                                  label: Text(
+                                    'Navigate',
+                                    style: TextStyle(
+                                      fontFamily: GoogleFonts.poppins().fontFamily,
+                                      fontSize: 14.0, // Smaller font
+                                      color: Colors.white, // Text color
+                                      fontWeight: FontWeight.w700, // Bold font
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.navigation, color: Colors.white), // Icon color
+                                ),
+                              ),
+
+                               _showNavigationCard(),
+                              // Show the navigation card here
+
+                            ],
+                          ),
+                        ),
+                       ),
+
                     ],
                   ),
                 ),
               ),
             ),
+
             Container(
               height: _isFullScreen
                   ? MediaQuery.of(context).size.height * 0.85
@@ -4508,10 +4784,14 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                             Factory<OneSequenceGestureRecognizer>(
                                     () => EagerGestureRecognizer()),
                           },
+
                         ),
+
                       ),
 
                     ),
+
+
                   ],
                 ),
 

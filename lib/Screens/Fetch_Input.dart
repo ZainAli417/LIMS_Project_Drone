@@ -3136,11 +3136,20 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
 
     return inside;
   }
-/*
+
+  void _fetchLocationData() async {
+    // Fetch the location data asynchronously
+    _currentLocation = await _location.getLocation();
+    if (_currentLocation != null && _selectedStartingPoint != null) {
+      _updateMarkersAndPolyline();
+    }
+  }
   Future<List<LatLng>> getRoutePoints(LatLng origin, LatLng destination) async {
-    const String apiKey = 'AIzaSyD8ZZ1l0zoTBL0AxyALg5e-TJmVYc2QWHo'; // Add your Google API key here
+    const String apiKey = 'AIzaSyDNToFfTa1a7WqcxS1PlC382Oem1MpHeHA'; // Replace with your API key
     final String url =
-        'https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&key=$apiKey';
+        'https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}'
+        '&destination=${destination.latitude},${destination.longitude}'
+        '&mode=walking&key=$apiKey'; // Use walking mode
 
     final response = await http.get(Uri.parse(url));
 
@@ -3151,13 +3160,16 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
         var route = data['routes'][0];
         var points = route['overview_polyline']['points'];
 
-        return _decodePolyline(points);
+        // Decode and return the polyline points
+        List<LatLng> routePoints = _decodePolyline(points);
+
+        // Ensure the polyline starts and ends at the exact source and destination points
+        return [origin, ...routePoints, destination];
       }
     }
 
     return [];
   }
-// Polyline decoding function
   List<LatLng> _decodePolyline(String polyline) {
     List<LatLng> coordinates = [];
     int index = 0, len = polyline.length;
@@ -3196,6 +3208,11 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       // Fetch the route from Google Directions API
       List<LatLng> routePoints = await getRoutePoints(currentLatLng, _selectedStartingPoint!);
 
+      if (routePoints.isEmpty) {
+        print('No route points available');
+        return; // Stop execution if route points are empty
+      }
+
       setState(() {
         // Create source marker
         Marker sourceMarker = Marker(
@@ -3221,23 +3238,27 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
         // Create polyline with the route points
         Polyline polyline = Polyline(
           polylineId: PolylineId('navroute'),
-          color: Colors.blue,
-          width: 5,
-          points: routePoints, // Use the route points from the API
+          color: Colors.redAccent,
+          width: 4,
+          points: routePoints,
         );
 
         // Clear existing polylines and add the new one
         navpolylines.clear();
         navpolylines.add(polyline);
 
-        // Move the camera to the source location
-        _googleMapController.animateCamera(CameraUpdate.newLatLngBounds(_boundsFromLatLngList(routePoints), 50));
+        // Move the camera to the route bounds
+        _googleMapController.animateCamera(
+          CameraUpdate.newLatLngBounds(_boundsFromLatLngList(routePoints), 50),
+        );
       });
     }
   }
-// Function to calculate LatLngBounds from a list of points
   LatLngBounds _boundsFromLatLngList(List<LatLng> list) {
-    assert(list.isNotEmpty);
+    if (list.isEmpty) {
+      throw Exception('LatLng list is empty. Cannot calculate bounds.');
+    }
+
     double x0 = list.first.latitude, x1 = list.first.latitude;
     double y0 = list.first.longitude, y1 = list.first.longitude;
 
@@ -3253,69 +3274,9 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       southwest: LatLng(x0, y0),
     );
   }
-  void _fetchLocationData() async {
-    // Fetch the location data asynchronously
-    _currentLocation = await _location.getLocation();
-    if (_currentLocation != null && _selectedStartingPoint != null) {
-      _updateMarkersAndPolyline();
-    }
-  }
-*/
-    void _updateMarkersAndPolyline() {
-    if (_currentLocation != null && _selectedStartingPoint != null) {
-      setState(() {
-        // Convert _currentLocation to LatLng
-        LatLng currentLatLng = LatLng(_currentLocation!.latitude!, _currentLocation!.longitude!);
 
-        // Create source marker
-        Marker sourceMarker = Marker(
-          markerId: const MarkerId('source'),
-          position: currentLatLng, // Use currentLatLng
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: const InfoWindow(title: 'Source'),
-        );
 
-        // Create destination marker
-        Marker destinationMarker = Marker(
-          markerId: const MarkerId('destination'),
-          position: _selectedStartingPoint!,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose),
-          infoWindow: const InfoWindow(title: 'Destination'),
-        );
 
-        // Clear existing markers
-        navmarkers.clear();
-        navmarkers.add(sourceMarker);
-        navmarkers.add(destinationMarker);
-
-        // Create polyline
-        Polyline polyline = Polyline(
-          polylineId: PolylineId('navroute'),
-          color: Colors.red,
-          width: 5,
-          points: [
-            currentLatLng, // Start at current location
-            LatLng(_selectedStartingPoint!.latitude, _selectedStartingPoint!.longitude),
-          ],
-        );
-
-        // Clear existing polylines and add the new one
-        navpolylines.clear();
-        navpolylines.add(polyline);
-
-        // Move the camera to the source location
-        _googleMapController.animateCamera(CameraUpdate.newLatLng(currentLatLng));
-      });
-    }
-  }
-
-  void _fetchLocationData() async {
-    // Fetch the location data asynchronously
-    _currentLocation = await _location.getLocation();
-    if (_currentLocation != null && _selectedStartingPoint != null) {
-      _updateMarkersAndPolyline();
-    }
-  }
 // Add the markers to the set
 //UI BUILD
   @override
@@ -4551,11 +4512,13 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                       ),
 
                     ),
-
-
                   ],
                 ),
+
+
               ),
+
+
             ),
             const SizedBox(height: 10),
           ],

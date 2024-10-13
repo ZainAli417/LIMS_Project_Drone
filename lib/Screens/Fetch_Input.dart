@@ -3172,6 +3172,196 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
 
     return instruction;
   }
+
+
+  // Filtered location storage and smoothing factor
+  LatLng? _lastFilteredLocation;
+   double _smoothingFactor = 0.9; // Adjust as needed
+
+  LatLng _filterLocation(LocationData newLocation) {
+    // Initialize the last filtered location if it is null
+    if (_lastFilteredLocation == null) {
+      _lastFilteredLocation = LatLng(newLocation.latitude!, newLocation.longitude!);
+      return _lastFilteredLocation!;
+    }
+
+    // Check if the new location is valid (within a reasonable jump distance)
+    if (!_isValidLocation(_lastFilteredLocation!, LatLng(newLocation.latitude!, newLocation.longitude!))) {
+      print('Ignoring large jump in location');
+      return _lastFilteredLocation!;
+    }
+
+    // Check the accuracy of the new location
+    if (newLocation.accuracy != null && newLocation.accuracy! > 20.0) {
+      print('Skipping inaccurate location data');
+      return _lastFilteredLocation!;
+    }
+
+    // Apply smoothing filter
+    double filteredLatitude = _lastFilteredLocation!.latitude * _smoothingFactor +
+        newLocation.latitude! * (1 - _smoothingFactor);
+    double filteredLongitude = _lastFilteredLocation!.longitude * _smoothingFactor +
+        newLocation.longitude! * (1 - _smoothingFactor);
+
+    // Update and return the filtered location
+    _lastFilteredLocation = LatLng(filteredLatitude, filteredLongitude);
+    return _lastFilteredLocation!;
+  }
+
+  bool _isValidLocation(LatLng oldLocation, LatLng newLocation) {
+    const double maxDistance = 1000.0; // Max 1 km jump
+    double distance = Geolocator.distanceBetween(
+      oldLocation.latitude, oldLocation.longitude,
+      newLocation.latitude, newLocation.longitude,
+    );
+    return distance < maxDistance;
+  }
+
+  void _updateMarkersAndPolyline() async {
+    if (_currentLocation != null && _selectedStartingPoint != null) {
+      LatLng currentLatLng = _filterLocation(_currentLocation!); // Filtered location
+
+      // Fetch the route data from Google Directions API
+      final response = await getRoutePoints(currentLatLng, _selectedStartingPoint!);
+
+      if (response == null || response.isEmpty) {
+        print('No route points available');
+        return;
+      }
+
+      setState(() {
+        // Create source marker
+        Marker sourceMarker = Marker(
+          markerId: const MarkerId('source'),
+          position: currentLatLng,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        );
+
+        // Create destination marker
+        Marker destinationMarker = Marker(
+          markerId: const MarkerId('destination'),
+          position: _selectedStartingPoint!,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose),
+        );
+
+        // Clear and update markers
+        navmarkers.clear();
+        navmarkers.add(sourceMarker);
+        navmarkers.add(destinationMarker);
+
+        // Decode route points
+        List<LatLng> routePoints = _decodeRoutePoints(response);
+
+        // Ensure the destination point is included
+        if (routePoints.isNotEmpty &&
+            (routePoints.last.latitude != _selectedStartingPoint!.latitude ||
+                routePoints.last.longitude != _selectedStartingPoint!.longitude)) {
+          routePoints.add(_selectedStartingPoint!);
+        } else if (routePoints.isEmpty) {
+          routePoints.add(_selectedStartingPoint!);
+        }
+
+        // Create polyline for the route
+        Polyline polyline = Polyline(
+          polylineId: const PolylineId('navroute'),
+          color: Colors.redAccent,
+          width: 4,
+          geodesic: true,
+          points: routePoints,
+        );
+
+        // Clear and add new polyline
+        navpolylines.clear();
+        navpolylines.add(polyline);
+
+        // Move camera to fit the route bounds
+        _googleMapController.animateCamera(
+          CameraUpdate.newLatLngBounds(
+            _boundsFromLatLngList(routePoints),
+            50,
+          ),
+        );
+      });
+    }
+  }
+  List<LatLng> _decodeRoutePoints(dynamic response) {
+    var legs = response['routes'][0]['legs'] as List;
+    var steps = legs[0]['steps'] as List;
+
+    List<LatLng> routePoints = [];
+    for (var step in steps) {
+      String encodedPolyline = step['polyline']['points'];
+      routePoints.addAll(_decodePolyline(encodedPolyline));
+    }
+    return routePoints;
+  }
+
+  void _startNavigation() async {
+    setState(() {
+      isNavigating = true; // Set navigation state to true
+    });
+
+    bool reachedDestination = false;
+    LocationData? currentLocation;
+    int stepIndex = 0;
+
+    List<dynamic> steps = await _getNavigationSteps(
+      LatLng(_currentLocation!.latitude!, _currentLocation!.longitude!),
+      _selectedStartingPoint!,
+    );
+
+    while (!reachedDestination) {
+      currentLocation = await _location.getLocation();
+      LatLng currentLatLng = _filterLocation(currentLocation); // Use filtered location
+
+      double distanceToDestination = _calculateDistance(currentLatLng, _selectedStartingPoint!);
+
+      if (distanceToDestination < 1) {
+        reachedDestination = true;
+        _showSnackbar_connection(context, 'You have reached your destination!');
+        return;
+      }
+
+      LatLng nextStepLocation = _getStepLatLng(steps[stepIndex]);
+      double distanceToStep = _calculateDistance(currentLatLng, nextStepLocation);
+
+      if (distanceToStep < 10) {
+        if (stepIndex < steps.length - 1) {
+          stepIndex++;
+        } else {
+          reachedDestination = true;
+           _showSnackbar_connection(context,'You have reached your destination!');
+
+          return;
+        }
+      }
+
+      instruction = _formatInstruction(steps[stepIndex]['html_instructions']);
+      remainingDistance = _calculateRemainingDistance(steps, stepIndex, currentLatLng);
+      eta = _calculateETA(remainingDistance);
+
+      List<LatLng> remainingRoute = _getRemainingRoutePoints(steps, stepIndex, currentLatLng);
+      setState(() {
+        navpolylines.clear();
+        navpolylines.add(Polyline(
+          polylineId: const PolylineId('navroute'),
+          color: Colors.redAccent,
+          width: 4,
+          points: remainingRoute,
+        ));
+      });
+
+      await Future.delayed(const Duration(seconds: 2));
+    }
+  }
+
+
+
+
+
+
+
+/*
   void _startNavigation() async {
     setState(() {
       isNavigating = true; // Set navigation state to true
@@ -3232,55 +3422,6 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
 
       await Future.delayed(const Duration(seconds: 2));
     }
-  }
-
-  Widget _showNavigationCard() {
-    if (!isNavigating) return Container(); // Return empty container if not navigating
-
-    return Card(
-      color: Colors.white, // Set card background color to white
-      //color: Colors.white70,
-      margin: const EdgeInsets.all(6),
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              instruction ?? '',
-              style:  TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: Colors.indigo[800], // Set instruction text color to indigo
-                fontFamily:
-                GoogleFonts.poppins().fontFamily,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Distance: ${remainingDistance.toStringAsFixed(1)} m  ',
-                  style:  TextStyle(
-                    color: Colors.black87, // Set distance text color to black
-                    fontWeight: FontWeight.w500,
-                    fontFamily: GoogleFonts.poppins().fontFamily,
-                  ),
-                ),
-                Text(
-                  'ETA: ${eta ~/ 60} min',
-                  style: const TextStyle(
-                    color: Colors.black87, // Set ETA text color to black
-                    fontFamily: 'Poppins', // Use Google Fonts Poppins
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
   }
   void _updateMarkersAndPolyline() async {
     if (_currentLocation != null && _selectedStartingPoint != null) {
@@ -3363,7 +3504,55 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       });
     }
   }
+*/
+  Widget _showNavigationCard() {
+    if (!isNavigating) return Container(); // Return empty container if not navigating
 
+    return Card(
+      color: Colors.white, // Set card background color to white
+      //color: Colors.white70,
+      margin: const EdgeInsets.all(6),
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              instruction ?? '',
+              style:  TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Colors.indigo[800], // Set instruction text color to indigo
+                fontFamily:
+                GoogleFonts.poppins().fontFamily,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Distance: ${remainingDistance.toStringAsFixed(1)} m  ',
+                  style:  TextStyle(
+                    color: Colors.black87, // Set distance text color to black
+                    fontWeight: FontWeight.w500,
+                    fontFamily: GoogleFonts.poppins().fontFamily,
+                  ),
+                ),
+                Text(
+                  'ETA: ${eta ~/ 60} min',
+                  style: const TextStyle(
+                    color: Colors.black87, // Set ETA text color to black
+                    fontFamily: 'Poppins', // Use Google Fonts Poppins
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
   Future<List<dynamic>> _getNavigationSteps(LatLng origin, LatLng destination) async {final response = await getRoutePoints(origin, destination);
 
   if (response != null && response.isNotEmpty) {
@@ -3437,7 +3626,6 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
 
     return coordinates;
   }
-
   LatLngBounds _boundsFromLatLngList(List<LatLng> list) {
     if (list.isEmpty) {
       throw Exception('LatLng list is empty. Cannot calculate bounds.');
@@ -4682,43 +4870,40 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                         ),
                       ),
                       if (_selectedStartingPoint != null)
-                       Center(
-                       child: Container(
-                          width: double.infinity, // custom width
-                          child: Row(
-                            children: [
-                              if (!isNavigating)
-
-                                Container(
-                                width: 130, // custom width for FAB
-                                height: 55, // custom height for FAB
-
-                                child: FloatingActionButton.extended(
-                                  onPressed: () {
-                                    _startNavigation(); // Call the function when FAB is pressed
-                                  },
-                                  backgroundColor: Colors.indigo[800], // FAB background color
-                                  label: Text(
-                                    'Navigate',
-                                    style: TextStyle(
-                                      fontFamily: GoogleFonts.poppins().fontFamily,
-                                      fontSize: 14.0, // Smaller font
-                                      color: Colors.white, // Text color
-                                      fontWeight: FontWeight.w700, // Bold font
+                        Center(
+                          child: Container(
+                            width: double.infinity, // custom width
+                            child: Row(
+                              children: [
+                                if (isNavigating)
+                                  Center(
+                                    child: _showNavigationCard(), // Center the navigation card
+                                  )
+                                else
+                                  Container(
+                                    width: 130, // custom width for FAB
+                                    height: 55, // custom height for FAB
+                                    child: FloatingActionButton.extended(
+                                      onPressed: () {
+                                        _startNavigation(); // Call the function when FAB is pressed
+                                      },
+                                      backgroundColor: Colors.indigo[800], // FAB background color
+                                      label: Text(
+                                        'Navigate',
+                                        style: TextStyle(
+                                          fontFamily: GoogleFonts.poppins().fontFamily,
+                                          fontSize: 14.0, // Smaller font
+                                          color: Colors.white, // Text color
+                                          fontWeight: FontWeight.w700, // Bold font
+                                        ),
+                                      ),
+                                      icon: const Icon(Icons.navigation, color: Colors.white), // Icon color
                                     ),
                                   ),
-                                  icon: const Icon(Icons.navigation, color: Colors.white), // Icon color
-                                ),
-                              ),
-
-                               _showNavigationCard(),
-                              // Show the navigation card here
-
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                       ),
-
                     ],
                   ),
                 ),

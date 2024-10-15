@@ -2,6 +2,8 @@ import 'dart:ui'; // For BackdropFilter
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:location/location.dart' as gps; // Prefixed location
+import 'package:location/location.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../Constant/login_provider.dart';
@@ -22,6 +24,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
+    requestLocationPermission();
     _animationController = AnimationController(
       vsync: this,
       duration: Duration(seconds: 2),
@@ -43,6 +46,34 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     _animationController.dispose();
     super.dispose();
   }
+  final gps.Location _location = gps.Location();
+
+  Future<void> requestLocationPermission() async {
+
+    // Check if location service is enabled
+    bool _serviceEnabled;
+    PermissionStatus _permissionGranted;
+
+    _serviceEnabled = await _location.serviceEnabled();
+    if (!_serviceEnabled) {
+      // Location services are not enabled, you can show a dialog or a message to the user
+      _serviceEnabled = await _location.requestService();
+      if (!_serviceEnabled) {
+        return; // Service not enabled, exit the function
+      }
+    }
+
+    // Check for location permission
+    _permissionGranted = await _location.hasPermission();
+    if (_permissionGranted == PermissionStatus.denied) {
+      _permissionGranted = await _location.requestPermission();
+      if (_permissionGranted != PermissionStatus.granted) {
+        return; // Permission denied, exit the function
+      }
+    }
+    // Location permission granted, proceed with your logic
+  }
+
 
   @override
   Widget build(BuildContext context) {

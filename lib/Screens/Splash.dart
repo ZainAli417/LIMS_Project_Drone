@@ -18,11 +18,10 @@ class _SplashScreenState extends State<SplashScreen>
   late SplashProvider splashProvider;
 
   @override
-  Future<void> initState() async {
+  void initState()  {
     super.initState();
     splashProvider = SplashProvider();
     splashProvider.initControllers(this);
-    await requestLocationPermission();
   }
 
   @override
@@ -41,51 +40,6 @@ class _SplashScreenState extends State<SplashScreen>
   void dispose() {
     splashProvider.disposeControllers();
     super.dispose();
-  }
-  Future<void> _requestLocationPermission() async {
-    bool _serviceEnabled;
-    PermissionStatus _permissionGranted;
-    _serviceEnabled = await _location.serviceEnabled();
-    if (!_serviceEnabled) {
-      _serviceEnabled = await _location.requestService();
-      if (!_serviceEnabled) {
-        return;
-      }
-    }
-    _permissionGranted = await _location.hasPermission();
-    if (_permissionGranted == PermissionStatus.denied) {
-      _permissionGranted = await _location.requestPermission();
-      if (_permissionGranted != PermissionStatus.granted) {
-        return;
-      }
-    }
-  }
-
-  Future<void> requestLocationPermission() async {
-    Location location = Location();
-
-    // Check if location service is enabled
-    bool _serviceEnabled;
-    PermissionStatus _permissionGranted;
-
-    _serviceEnabled = await location.serviceEnabled();
-    if (!_serviceEnabled) {
-      // Location services are not enabled, you can show a dialog or a message to the user
-      _serviceEnabled = await location.requestService();
-      if (!_serviceEnabled) {
-        return; // Service not enabled, exit the function
-      }
-    }
-
-    // Check for location permission
-    _permissionGranted = await location.hasPermission();
-    if (_permissionGranted == PermissionStatus.denied) {
-      _permissionGranted = await location.requestPermission();
-      if (_permissionGranted != PermissionStatus.granted) {
-        return; // Permission denied, exit the function
-      }
-    }
-    // Location permission granted, proceed with your logic
   }
   @override
   Widget build(BuildContext context) {

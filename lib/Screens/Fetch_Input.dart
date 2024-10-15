@@ -175,6 +175,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
 
   void initState() {
     super.initState();
+    _loadCustomMarker();
     _controller = AnimationController(
       vsync: this,
       duration: Duration(seconds: 20),
@@ -216,8 +217,6 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
   String? instruction; // To hold navigation instruction
   double remainingDistance = 0; // To hold remaining distance
   int eta = 0; // To hold ETA
-
-
   @override
   void dispose() {
     // Cancel timers and cleanup listeners
@@ -2980,7 +2979,6 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
 
     _moveToNextSegment();
   }
-
   void _startMovement_GPS(List<LatLng> path, List<List<LatLng>> selectedSegments) {
     if (path.isEmpty || _selectedStartingPoint == null) {
       print("Path is empty or starting point not selected, cannot start movement");
@@ -3098,7 +3096,6 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
 
     });
   }
-
 // Function to determine if the current position is at the destination
   bool _isAtDestination(LatLng currentPosition) {
     // Check if current position is close enough to the selected destination
@@ -3162,9 +3159,6 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
     return inside;
   }
   //NAV DATA LOGIC
-
-
-
   String _formatInstruction(String instruction) {
     // Remove <b> tags
     instruction = instruction.replaceAll(RegExp(r'<b>|</b>'), '');
@@ -3183,12 +3177,34 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
 
     return instruction;
   }
-
-
   // Filtered location storage and smoothing factor
   LatLng? _lastFilteredLocation;
   double _smoothingFactor = 0.5; // Adjust as needed
-  /* LatLng _filterLocation(LocationData newLocation) {
+  void _initializeLocation() async {
+    // Request location permission
+    LocationPermission permission = await Geolocator.requestPermission();
+
+    if (permission == LocationPermission.denied) {
+      print('Location Permission Denied');
+      return;
+    } else if (permission == LocationPermission.deniedForever) {
+      print('Location Permission Denied Forever');
+      return;
+    }
+
+    // Start location updates
+    _positionStreamSubscription = Geolocator.getPositionStream().listen((position) {
+      setState(() { _currentLocation = LocationData.fromMap(position.toJson()); });
+    });
+  }
+  void _initializeMarkers() {
+    // Initialize markers
+    setState(() {
+      navmarkers.clear();
+      _markers.clear();
+    });
+  }
+  LatLng _filterLocation(LocationData newLocation) {
     // Initialize the last filtered location if it is null
     if (_lastFilteredLocation == null) {
       _lastFilteredLocation = LatLng(newLocation.latitude!, newLocation.longitude!);
@@ -3217,7 +3233,6 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
     _lastFilteredLocation = LatLng(filteredLatitude, filteredLongitude);
     return _lastFilteredLocation!;
   }
-
   Future<List<dynamic>> _getNavigationSteps(LatLng origin, LatLng destination) async {
     final response = await getRoutePoints(origin, destination);
     if (response != null) {
@@ -3249,12 +3264,10 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
     }
     return null;
   }
-
   List<LatLng> _decodeRoutePoints(Map<String, dynamic> response) {
     final polyline = response['routes'][0]['overview_polyline']['points'];
     return _decodePolyline(polyline);
   }
-
   List<LatLng> _decodePolyline(String encoded) {
     PolylinePoints polylinePoints = PolylinePoints();
     List<PointLatLng> result = polylinePoints.decodePolyline(encoded);
@@ -3264,30 +3277,59 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
   }
 
 
+  List<LatLng> _routePoints = []; // Global or class variable to store route points
 
-  void _updatePolyline(List<LatLng> points) {
-    setState(() {
-      navpolylines.clear();
-      navpolylines.add(
-        Polyline(
-          polylineId: const PolylineId('navroute'),
-          color: Colors.redAccent,
-          width: 4,
-          points: points,
-          jointType: JointType.round,
-          endCap: Cap.roundCap,
-          startCap: Cap.roundCap,
-        ),
-      );
-    });
+
+
+  void _updateMarkersAndPolyline() async {
+    if (_currentLocation != null && _selectedStartingPoint != null) {
+      LatLng currentLatLng = _filterLocation(_currentLocation!);
+      final response = await getRoutePoints(currentLatLng, _selectedStartingPoint!);
+
+      if (response == null) {
+        print('No route points available');
+        return;
+      }
+
+      setState(() {
+        navmarkers.clear();
+        navmarkers.addAll([
+          Marker(
+            markerId: const MarkerId('source'),
+            position: currentLatLng,
+            icon: customcurrentMarkerIcon,
+          ),
+          Marker(
+            markerId: const MarkerId('destination'),
+            position: _selectedStartingPoint!,
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose),
+          ),
+        ]);
+
+        // Decode route points and ensure the first point is currentLatLng
+        _routePoints = _decodeRoutePoints(response);
+        if (!_areLatLngsEqual(_routePoints.first, currentLatLng)) {
+          _routePoints.insert(0, currentLatLng); // Ensure current location is the starting point
+        }
+        if (!_areLatLngsEqual(_routePoints.last, _selectedStartingPoint!)) {
+          _routePoints.add(_selectedStartingPoint!); // Ensure the last point is the destination
+        }
+
+        _updatePolyline(_routePoints); // Update polyline with stored route points
+
+        _googleMapController.animateCamera(
+          CameraUpdate.newLatLngBounds(
+            _boundsFromLatLngList(_routePoints),
+            50,
+          ),
+        );
+      });
+    }
   }
 
-
-
-
-*/
   void _startNavigation() async {
-    setState(() => isNavigating = true);
+    setState(() => isNavigating = true,);
+    setState(() => is_current = false,);
 
     BitmapDescriptor customMarkerIcon = await BitmapDescriptor.fromAssetImage(
       const ImageConfiguration(size: Size(48, 48)),
@@ -3299,9 +3341,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       _selectedStartingPoint!,
     );
 
-    List<LatLng> allRoutePoints = _getRemainingRoutePoints(
-      steps, 0, LatLng(_currentLocation!.latitude!, _currentLocation!.longitude!),
-    );
+    List<LatLng> allRoutePoints = _routePoints; // Use stored route points
 
     bool reachedDestination = false;
     int stepIndex = 0;
@@ -3339,167 +3379,45 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       instruction = _formatInstruction(steps[stepIndex]['html_instructions']);
       remainingDistance = _calculateRemainingDistance(steps, stepIndex, currentLatLng);
       eta = _calculateETA(remainingDistance);
-
-      List<LatLng> remainingRoute = _getRemainingRoutePoints(steps, stepIndex, currentLatLng);
-      if (!_areLatLngsEqual(remainingRoute.last, _selectedStartingPoint!)) {
-        remainingRoute.add(_selectedStartingPoint!);
-      }
+      _googleMapController.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: currentLatLng,
+            zoom: 18.0, // Keep zoom level suitable for navigation
+            tilt: 45,    // Flat 2D view (no tilt)
+            bearing: 0, // Keep North upward (0 degrees bearing)
+          ),
+        ),
+      );
+      // Use allRoutePoints for remainingRoute
+      List<LatLng> remainingRoute = allRoutePoints.sublist(stepIndex); // Keep it smooth and on the road
 
       _updatePolyline(remainingRoute);
       await Future.delayed(const Duration(seconds: 2));
     }
   }
-  void _clearNavigationData() {
-    setState(() {
-      navmarkers.clear();
-      navpolylines.clear();
-      isNavigating = false;
-    });
+//camera view chekcing testing only map type
+bool is_current=true;
+  late BitmapDescriptor customcurrentMarkerIcon;
+  Future<void> _loadCustomMarker() async {
+    customcurrentMarkerIcon = await BitmapDescriptor.fromAssetImage(
+      const ImageConfiguration(size: Size(48, 48)),
+      'images/farmer.png',
+    );
+  }
+  Marker _buildCustomLocationMarker() {
+
+    return Marker(
+      markerId: const MarkerId('current_location'),
+      position: LatLng(_currentLocation!.latitude!, _currentLocation!.longitude!),
+      icon: customcurrentMarkerIcon, // Use your custom bitmap icon
+    );
   }
 
 
-  void _initializeLocation() async {
-    // Request location permission
-    LocationPermission permission = await Geolocator.requestPermission();
 
-    if (permission == LocationPermission.denied) {
-      print('Location Permission Denied');
-      return;
-    } else if (permission == LocationPermission.deniedForever) {
-      print('Location Permission Denied Forever');
-      return;
-    }
 
-    // Start location updates
-    _positionStreamSubscription = Geolocator.getPositionStream().listen((position) {
-      setState(() { _currentLocation = LocationData.fromMap(position.toJson()); });
-    });
-  }
 
-  void _initializeMarkers() {
-    // Initialize markers
-    setState(() {
-      navmarkers.clear();
-      _markers.clear();
-    });
-  }
-
-  LatLng _filterLocation(LocationData newLocation) {
-    // Initialize the last filtered location if it is null
-    if (_lastFilteredLocation == null) {
-      _lastFilteredLocation = LatLng(newLocation.latitude!, newLocation.longitude!);
-      return _lastFilteredLocation!;
-    }
-
-    // Check if the new location is valid (within a reasonable jump distance)
-    if (!_isValidLocation(_lastFilteredLocation!, LatLng(newLocation.latitude!, newLocation.longitude!))) {
-      print('Ignoring large jump in location');
-      return _lastFilteredLocation!;
-    }
-
-    // Check the accuracy of the new location
-    if (newLocation.accuracy != null && newLocation.accuracy! > 20.0) {
-      print('Skipping inaccurate location data');
-      return _lastFilteredLocation!;
-    }
-
-    // Apply smoothing filter
-    double filteredLatitude = _lastFilteredLocation!.latitude * _smoothingFactor +
-        newLocation.latitude! * (1 - _smoothingFactor);
-    double filteredLongitude = _lastFilteredLocation!.longitude * _smoothingFactor +
-        newLocation.longitude! * (1 - _smoothingFactor);
-
-    // Update and return the filtered location
-    _lastFilteredLocation = LatLng(filteredLatitude, filteredLongitude);
-    return _lastFilteredLocation!;
-  }
-
-  Future<List<dynamic>> _getNavigationSteps(LatLng origin, LatLng destination) async {
-    final response = await getRoutePoints(origin, destination);
-    if (response != null) {
-      final legs = response['routes'][0]['legs'] as List;
-      return legs.isNotEmpty ? legs[0]['steps'] : [];
-    }
-    return [];
-  }
-
-  Future<Map<String, dynamic>?> getRoutePoints(LatLng origin, LatLng destination) async {
-    const apiKey = 'AIzaSyDNToFfTa1a7WqcxS1PlC382Oem1MpHeHA'; // Replace with valid API key
-    final url =
-        'https://maps.googleapis.com/maps/api/directions/json'
-        '?origin=${origin.latitude},${origin.longitude}'
-        '&destination=${destination.latitude},${destination.longitude}'
-        '&mode=walking&key=$apiKey';
-
-    try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['status'] == 'OK') return data;
-        print('API Error: ${data['status']}');
-      } else {
-        print('HTTP Error: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('Exception: $e');
-    }
-    return null;
-  }
-
-  List<LatLng> _decodeRoutePoints(Map<String, dynamic> response) {
-    final polyline = response['routes'][0]['overview_polyline']['points'];
-    return _decodePolyline(polyline);
-  }
-
-  List<LatLng> _decodePolyline(String encoded) {
-    PolylinePoints polylinePoints = PolylinePoints();
-    List<PointLatLng> result = polylinePoints.decodePolyline(encoded);
-
-    // Convert PointLatLng to LatLng
-    return result.map((point) => LatLng(point.latitude, point.longitude)).toList();
-  }
-
-  void _updateMarkersAndPolyline() async {
-    if (_currentLocation != null && _selectedStartingPoint != null) {
-      LatLng currentLatLng = _filterLocation(_currentLocation!);
-      final response = await getRoutePoints(currentLatLng, _selectedStartingPoint!);
-
-      if (response == null) {
-        print('No route points available');
-        return;
-      }
-
-      setState(() {
-        navmarkers.clear();
-        navmarkers.addAll([
-          Marker(
-            markerId: const MarkerId('source'),
-            position: currentLatLng,
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          ),
-          Marker(
-            markerId: const MarkerId('destination'),
-            position: _selectedStartingPoint!,
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose),
-          ),
-        ]);
-
-        List<LatLng> routePoints = _decodeRoutePoints(response);
-        if (!_areLatLngsEqual(routePoints.last, _selectedStartingPoint!)) {
-          routePoints.add(_selectedStartingPoint!);
-        }
-
-        _updatePolyline(routePoints);
-
-        _googleMapController.animateCamera(
-          CameraUpdate.newLatLngBounds(
-            _boundsFromLatLngList(routePoints),
-            50,
-          ),
-        );
-      });
-    }
-  }
 
   void _updatePolyline(List<LatLng> points) {
     setState(() {
@@ -3517,9 +3435,6 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       );
     });
   }
-
-
-
   bool _areLatLngsEqual(LatLng a, LatLng b, {double precision = 0.00001}) {
     return (a.latitude - b.latitude).abs() < precision &&
         (a.longitude - b.longitude).abs() < precision;
@@ -3645,6 +3560,13 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
   }
 
   return points;
+  }
+  void _clearNavigationData() {
+    setState(() {
+      navmarkers.clear();
+      navpolylines.clear();
+      isNavigating = false;
+    });
   }
 
 
@@ -4878,18 +4800,19 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                       controller: _screenshotController,
                       child: _currentLocation == null
                           ? const Center(child: CircularProgressIndicator())
-                          :RepaintBoundary(
+                          : RepaintBoundary(
                         key: _googleMapKey, // Attach the key to GoogleMap
                         child: GoogleMap(
                           initialCameraPosition: CameraPosition(
                             target: _currentLocation != null
                                 ? LatLng(_currentLocation!.latitude!, _currentLocation!.longitude!)
                                 : LatLng(0, 0), // Default fallback position
-                            zoom: _currentLocation != null ? 25.0 : 4.0, // Zoom in when current location is available
+                            zoom: _currentLocation != null ? 25.0 : 4.0, // Zoom in when location is available
                           ),
                           markers: {
                             ..._markers,
                             if (Provider.of<ISSAASProvider>(context).isSaas) ...navmarkers,
+                            if (_currentLocation != null && is_current) _buildCustomLocationMarker(), // Add custom marker
                           },
                           polylines: {
                             ..._polylines,
@@ -4899,40 +4822,32 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
                           },
                           polygons: {
                             if (!Provider.of<ISSAASProvider>(context).isSaas)
-                              ..._FieldPolygons, // Load field detection polygons only if not in SaaS mode
+                              ..._FieldPolygons, // Load field polygons only if not in SaaS mode
                             ...polygons, // Always load custom polygons
                           },
-                          mapType: MapType.hybrid, // Set the map type to Satellite view
+                          mapType: MapType.normal,
                           zoomGesturesEnabled: true,
                           rotateGesturesEnabled: true,
                           scrollGesturesEnabled: true,
                           buildingsEnabled: true,
                           onTap: _isCustomMode ? _onMapTap : null,
-                          myLocationEnabled: true,
-                          myLocationButtonEnabled: true,
+                          myLocationEnabled: false, // Disable default location marker
+                          myLocationButtonEnabled: true, // Keep the button
                           onMapCreated: (controller) {
                             _googleMapController = controller;
-                            // Camera animation is now handled separately.
-                            _checkCityAndFetchData(); // Fetch and display Field data on map creation
+                            _checkCityAndFetchData(); // Fetch and display field data on map creation
                             _updateMarkersAndPolyline();
                           },
                           gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
-                            Factory<OneSequenceGestureRecognizer>(
-                                    () => EagerGestureRecognizer()),
+                            Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
                           },
-
                         ),
-
                       ),
-
                     ),
-
-
                   ],
                 ),
-
-
               ),
+
 
 
             ),
@@ -5426,6 +5341,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
     return areaInAcres;
   }*/
 }
+
 
 
 

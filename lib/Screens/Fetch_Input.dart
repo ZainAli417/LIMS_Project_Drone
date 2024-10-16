@@ -3282,6 +3282,8 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
 
 
   void _updateMarkersAndPolyline() async {
+
+
     if (_currentLocation != null && _selectedStartingPoint != null) {
       LatLng currentLatLng = _filterLocation(_currentLocation!);
       final response = await getRoutePoints(currentLatLng, _selectedStartingPoint!);
@@ -3294,11 +3296,7 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
       setState(() {
         navmarkers.clear();
         navmarkers.addAll([
-          Marker(
-            markerId: const MarkerId('source'),
-            position: currentLatLng,
-            icon: customcurrentMarkerIcon,
-          ),
+
           Marker(
             markerId: const MarkerId('destination'),
             position: _selectedStartingPoint!,
@@ -3328,9 +3326,11 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
   }
 
   void _startNavigation() async {
-    setState(() => isNavigating = true,);
-    setState(() => is_current = false,);
-
+  setState(() {
+    isNavigating = true;
+    is_current = false;
+  });
+  LatLng? previousLatLng;
     BitmapDescriptor customMarkerIcon = await BitmapDescriptor.fromAssetImage(
       const ImageConfiguration(size: Size(48, 48)),
       'images/farmer.png',
@@ -3358,6 +3358,13 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
         return;
       }
 
+    // Calculate bearing (angle) based on movement direction
+    double bearing = 0;
+    if (previousLatLng != null) {
+      bearing = _calculateBearing(previousLatLng, currentLatLng);
+    }
+    previousLatLng = currentLatLng; // Update previous location
+
       Marker currentLocationMarker = Marker(
         markerId: const MarkerId('source'),
         position: currentLatLng,
@@ -3383,19 +3390,35 @@ class _Fetch_InputState extends State<Fetch_Input> with SingleTickerProviderStat
         CameraUpdate.newCameraPosition(
           CameraPosition(
             target: currentLatLng,
-            zoom: 18.0, // Keep zoom level suitable for navigation
-            tilt: 45,    // Flat 2D view (no tilt)
-            bearing: 0, // Keep North upward (0 degrees bearing)
+          zoom: 18.0, // Suitable zoom for navigation
+          tilt: 20,    // Tilt to simulate chase view
+          bearing: bearing, // Rotate to align with the user's movement direction
           ),
         ),
       );
-      // Use allRoutePoints for remainingRoute
-      List<LatLng> remainingRoute = allRoutePoints.sublist(stepIndex); // Keep it smooth and on the road
 
+    // Use allRoutePoints for remaining route
+    List<LatLng> remainingRoute = allRoutePoints.sublist(stepIndex);
       _updatePolyline(remainingRoute);
       await Future.delayed(const Duration(seconds: 2));
     }
   }
+
+  double _calculateBearing(LatLng from, LatLng to) {
+    double lat1 = from.latitude * (pi / 180);
+    double lon1 = from.longitude * (pi / 180);
+    double lat2 = to.latitude * (pi / 180);
+    double lon2 = to.longitude * (pi / 180);
+
+    double dLon = lon2 - lon1;
+    double y = sin(dLon) * cos(lat2);
+    double x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon);
+    double bearing = atan2(y, x) * (180 / pi);
+
+    return (bearing + 360) % 360; // Normalize to 0-360 degrees
+  }
+
+
 //camera view chekcing testing only map type
 bool is_current=true;
   late BitmapDescriptor customcurrentMarkerIcon;
@@ -3414,12 +3437,77 @@ bool is_current=true;
     );
   }
 
+  bool _hasAnimatedPolyline = false; // Flag to track if animation has occurred
+
+  void _updatePolyline(List<LatLng> points) async {
+    if (_hasAnimatedPolyline) {
+      // If the polyline has already been animated, update without animation
+      setState(() {
+        navpolylines.clear();
+        navpolylines.addAll([
+          Polyline(
+            polylineId: const PolylineId('stroke'),
+            color: Colors.black,
+            width: 6,
+            points: points,
+            jointType: JointType.round,
+            endCap: Cap.roundCap,
+            startCap: Cap.roundCap,
+          ),
+          Polyline(
+            polylineId: const PolylineId('main'),
+            color: Colors.lightBlueAccent,
+            width: 4,
+            points: points,
+            jointType: JointType.round,
+            endCap: Cap.roundCap,
+            startCap: Cap.roundCap,
+          ),
+        ]);
+      });
+      return; // Exit the function without animation
+    }
+
+    // Clear previous polylines and animate the polyline for the first time
+    setState(() => navpolylines.clear());
+
+    Polyline strokePolyline = const Polyline(
+      polylineId: PolylineId('stroke'),
+      color: Colors.black,
+      width: 6,
+      points: [],
+      jointType: JointType.round,
+      endCap: Cap.roundCap,
+      startCap: Cap.roundCap,
+    );
+
+    Polyline mainPolyline = const Polyline(
+      polylineId: PolylineId('main'),
+      color: Colors.lightBlueAccent,
+      width: 4,
+      points: [],
+      jointType: JointType.round,
+      endCap: Cap.roundCap,
+      startCap: Cap.roundCap,
+    );
+
+    // Animate the polyline drawing the first time
+    for (int i = 0; i < points.length; i++) {
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      List<LatLng> currentPoints = points.sublist(0, i + 1);
+      setState(() {
+        navpolylines.clear();
+        navpolylines.add(strokePolyline.copyWith(pointsParam: currentPoints));
+        navpolylines.add(mainPolyline.copyWith(pointsParam: currentPoints));
+      });
+    }
+
+    _hasAnimatedPolyline = true; // Set the flag to true after the first animation
+  }
 
 
-
-
-
-  void _updatePolyline(List<LatLng> points) {
+/*void _updatePolyline(List<LatLng> points) {
     setState(() {
       navpolylines.clear();
       navpolylines.add(
@@ -3434,7 +3522,7 @@ bool is_current=true;
         ),
       );
     });
-  }
+  }*/
   bool _areLatLngsEqual(LatLng a, LatLng b, {double precision = 0.00001}) {
     return (a.latitude - b.latitude).abs() < precision &&
         (a.longitude - b.longitude).abs() < precision;
